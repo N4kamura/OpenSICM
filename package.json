@@ -1,0 +1,30 @@
+{
+  "name": "open-sicm",
+  "version": "1.0.0",
+  "description": "Gateway Open Source GPS para transporte público - Conexión SICM ATU",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "simulator": "node simulator.js",
+    "mock-atu": "node test/mock-atu-server.js",
+    "test": "node test/run-tests.js"
+  },
+  "keywords": [
+    "gps",
+    "atu",
+    "sicm",
+    "transporte-urbano",
+    "telemetria",
+    "gateway",
+    "lima",
+    "callao"
+  ],
+  "author": "OpenSICM Community",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "ws": "^8.18.0"
+  }
+}

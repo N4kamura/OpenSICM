@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  opensicm-gateway:
+    build: .
+    container_name: opensicm-gateway
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-3000}:3000"
+      - "${GPS_INGEST_PORT:-5001}:5001"
+    environment:
+      - NODE_ENV=production
+      - HTTP_PORT=3000
+      - GPS_INGEST_PORT=5001
+      - ATU_WS_ENDPOINT=${ATU_WS_ENDPOINT:-ws://mock-atu:5000/ws}
+      - ATU_COMPANY_TOKEN=${ATU_COMPANY_TOKEN:-TOKEN_EMPRESA}
+      - TRANSMIT_INTERVAL_SEC=${TRANSMIT_INTERVAL_SEC:-30}
+      - OFFLINE_QUEUE_MAX_SIZE=10000
+      - OFFLINE_QUEUE_FILE=/app/data/offline_queue.json
+    volumes:
+      - opensicm-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 250M
+
+  # Servidor simulador de ATU (desactivar en producción comentando este bloque)
+  mock-atu:
+    build: .
+    container_name: opensicm-mock-atu
+    command: ["node", "test/mock-atu-server.js"]
+    ports:
+      - "5000:5000"
+    environment:
+      - MOCK_ATU_PORT=5000
+      - ATU_COMPANY_TOKEN=${ATU_COMPANY_TOKEN:-TOKEN_EMPRESA}
+
+volumes:
+  opensicm-data:
+    driver: local
