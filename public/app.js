@@ -66,21 +66,17 @@
         <div class="bus-marker-icon" style="transform: rotate(${rumbo}deg);">
           <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Sombra de base -->
-            <ellipse cx="22" cy="24" rx="15" ry="17" fill="rgba(0,0,0,0.4)"/>
-            <!-- Carrocería de Bus Urbano con Cabina Frontal -->
-            <rect x="13" y="6" width="18" height="32" rx="4" fill="${color}" stroke="#ffffff" stroke-width="2"/>
-            <!-- Flecha Direccional de Rumbo hacia arriba -->
-            <polygon points="22,1 17,7 27,7" fill="#ffffff" stroke="${color}" stroke-width="1"/>
-            <!-- Parabrisas frontal -->
-            <rect x="15" y="8" width="14" height="6" rx="1.5" fill="#0f172a"/>
-            <!-- Ventanillas laterales -->
-            <rect x="14" y="16" width="3" height="16" rx="1" fill="#1e293b"/>
-            <rect x="27" y="16" width="3" height="16" rx="1" fill="#1e293b"/>
-            <!-- Techo / línea central -->
-            <line x1="22" y1="16" x2="22" y2="34" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
-            <!-- Luces delanteras -->
-            <circle cx="15.5" cy="7" r="1.5" fill="#fef08a"/>
-            <circle cx="28.5" cy="7" r="1.5" fill="#fef08a"/>
+            <polygon points="12,15 22,3 32,15 32,39 12,39" fill="rgba(0,0,0,0.4)"/>
+            <!-- Símbolo: Rectángulo con la parte frontal del conductor triangular -->
+            <path d="M 13 15 L 22 3 L 31 15 L 31 38 L 13 38 Z" fill="${color}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+            <!-- Cabina del conductor / Parabrisas en el frente triangular -->
+            <polygon points="16,15 22,6 28,15" fill="#0f172a"/>
+            <!-- Ventanillas laterales del cuerpo rectangular -->
+            <rect x="15" y="19" width="3" height="15" rx="1" fill="#1e293b"/>
+            <rect x="26" y="19" width="3" height="15" rx="1" fill="#1e293b"/>
+            <!-- Faros delanteros -->
+            <circle cx="16" cy="15" r="1.5" fill="#fef08a"/>
+            <circle cx="28" cy="15" r="1.5" fill="#fef08a"/>
           </svg>
         </div>
       </div>
@@ -453,6 +449,388 @@
       modal.classList.add('active');
     }
   };
+
+  // --- NAVEGACIÓN ENTRE PESTAÑAS ---
+  document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetId = btn.getAttribute('data-target');
+      const targetPanel = document.getElementById(targetId);
+      if (targetPanel) {
+        targetPanel.classList.add('active');
+        if (targetId === 'view-map') {
+          setTimeout(() => map.invalidateSize(), 200);
+        } else if (targetId === 'view-fleet') {
+          loadFleet();
+        } else if (targetId === 'view-testing') {
+          populateTestUnits();
+          updateTestPreview();
+        }
+      }
+    });
+  });
+
+  // --- GESTIÓN DE FLOTA Y ASIGNACIÓN DE GPS ---
+  let fleetData = [];
+  let currentFleetFilter = 'TODAS';
+  let fleetSearchQuery = '';
+
+  const fStatTotal = document.getElementById('f-stat-total');
+  const fStatConGps = document.getElementById('f-stat-con-gps');
+  const fStatSinGps = document.getElementById('f-stat-sin-gps');
+  const fleetTableBody = document.getElementById('fleet-table-body');
+  const fleetFilterSearch = document.getElementById('fleet-filter-search');
+  const modalUnit = document.getElementById('modal-unit-form');
+  const btnOpenAddUnit = document.getElementById('btn-open-add-unit');
+  const modalUnitClose = document.getElementById('modal-unit-close');
+  const btnCancelUnit = document.getElementById('btn-cancel-unit');
+  const btnSubmitUnit = document.getElementById('btn-submit-unit');
+  const unitFormError = document.getElementById('unit-form-error');
+
+  async function loadFleet() {
+    try {
+      const res = await fetch('/api/fleet');
+      const data = await res.json();
+      fleetData = data.units || [];
+
+      if (fStatTotal) fStatTotal.textContent = data.stats?.total || fleetData.length;
+      if (fStatConGps) fStatConGps.textContent = data.stats?.conGps || 0;
+      if (fStatSinGps) fStatSinGps.textContent = data.stats?.sinGps || 0;
+
+      renderFleetTable();
+    } catch (err) {
+      console.error('Error cargando flota:', err);
+    }
+  }
+
+  function renderFleetTable() {
+    if (!fleetTableBody) return;
+
+    const q = fleetSearchQuery.toLowerCase().trim();
+    const filtered = fleetData.filter(u => {
+      const matchFilter = currentFleetFilter === 'TODAS' ||
+        (currentFleetFilter === 'CON_GPS' && u.tieneGps) ||
+        (currentFleetFilter === 'SIN_GPS' && !u.tieneGps);
+
+      const matchSearch = !q ||
+        (u.placa && u.placa.toLowerCase().includes(q)) ||
+        (u.padron && u.padron.toString().toLowerCase().includes(q)) ||
+        (u.imei && u.imei.toLowerCase().includes(q));
+
+      return matchFilter && matchSearch;
+    });
+
+    if (filtered.length === 0) {
+      fleetTableBody.innerHTML = `
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">
+            No se encontraron unidades con los filtros seleccionados.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    let html = '';
+    filtered.forEach(u => {
+      const gpsBadge = u.tieneGps
+        ? `<span class="badge-gps-ok">🟢 CON GPS</span>`
+        : `<span class="badge-gps-none">⚠️ SIN GPS ASIGNADO</span>`;
+
+      html += `
+        <tr>
+          <td><strong style="font-family: monospace; font-size: 0.95rem; color: #fff;">${u.placa}</strong></td>
+          <td><span class="bus-ruta-badge">${u.ruta || 'S/R'}</span></td>
+          <td>${u.padron || '-'}</td>
+          <td>${gpsBadge}</td>
+          <td>${u.modeloGps || '<span style="color: var(--text-dim);">No asignado</span>'}</td>
+          <td style="font-family: monospace; color: ${u.imei ? '#38bdf8' : 'var(--text-dim)'};">${u.imei || 'Sin módem'}</td>
+          <td>
+            <div style="display: flex; gap: 0.35rem;">
+              <button class="tbl-action-btn" onclick="window.editUnit('${u.placa}')" title="Asignar o editar GPS">
+                🔧 Asignar GPS
+              </button>
+              <button class="tbl-action-btn" onclick="window.testUnitTrama('${u.placa}')" title="Probar transmisión ATU">
+                🧪 Probar
+              </button>
+              <button class="tbl-action-btn btn-delete" onclick="window.deleteUnit('${u.placa}')" title="Eliminar unidad">
+                🗑️
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+
+    fleetTableBody.innerHTML = html;
+  }
+
+  // Filtros de tabla de flota
+  document.querySelectorAll('[data-fleet-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-fleet-filter]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFleetFilter = btn.getAttribute('data-fleet-filter');
+      renderFleetTable();
+    });
+  });
+
+  if (fleetFilterSearch) {
+    fleetFilterSearch.addEventListener('input', (e) => {
+      fleetSearchQuery = e.target.value;
+      renderFleetTable();
+    });
+  }
+
+  // Modal para agregar o editar unidad
+  function openUnitModal(unit = null) {
+    if (!modalUnit) return;
+    unitFormError.style.display = 'none';
+
+    document.getElementById('unit-modal-title').textContent = unit ? `🔧 Asignar GPS a Unidad [${unit.placa}]` : '➕ Registrar Unidad / Asignar GPS';
+    document.getElementById('unit-form-placa').value = unit ? unit.placa : '';
+    document.getElementById('unit-form-placa').readOnly = !!unit;
+    document.getElementById('unit-form-ruta').value = unit ? unit.ruta : 'IO33B';
+    document.getElementById('unit-form-padron').value = unit ? (unit.padron || '') : '';
+    document.getElementById('unit-form-imei').value = unit ? (unit.imei || '') : '';
+    document.getElementById('unit-form-modelo').value = unit ? (unit.modeloGps || 'TELTONIKA_FMB920') : 'TELTONIKA_FMB920';
+    document.getElementById('unit-form-notas').value = unit ? (unit.notas || '') : '';
+
+    modalUnit.classList.add('active');
+  }
+
+  function closeUnitModal() {
+    if (modalUnit) modalUnit.classList.remove('active');
+  }
+
+  if (btnOpenAddUnit) btnOpenAddUnit.addEventListener('click', () => openUnitModal());
+  if (modalUnitClose) modalUnitClose.addEventListener('click', closeUnitModal);
+  if (btnCancelUnit) btnCancelUnit.addEventListener('click', closeUnitModal);
+  if (modalUnit) {
+    modalUnit.addEventListener('click', (e) => {
+      if (e.target === modalUnit) closeUnitModal();
+    });
+  }
+
+  if (btnSubmitUnit) {
+    btnSubmitUnit.addEventListener('click', async () => {
+      const placa = document.getElementById('unit-form-placa').value.trim().toUpperCase();
+      const ruta = document.getElementById('unit-form-ruta').value.trim().toUpperCase();
+      const padron = document.getElementById('unit-form-padron').value.trim();
+      const imei = document.getElementById('unit-form-imei').value.trim();
+      const modeloGps = document.getElementById('unit-form-modelo').value;
+      const notas = document.getElementById('unit-form-notas').value.trim();
+
+      if (!placa || placa.length !== 6) {
+        unitFormError.textContent = 'La placa debe contener exactamente 6 caracteres alfanuméricos.';
+        unitFormError.style.display = 'block';
+        return;
+      }
+      if (!ruta) {
+        unitFormError.textContent = 'El código de ruta ATU es obligatorio.';
+        unitFormError.style.display = 'block';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/fleet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ placa, ruta, padron, imei, modeloGps, notas })
+        });
+        const json = await res.json();
+        if (json.status === 'OK') {
+          closeUnitModal();
+          loadFleet();
+        } else {
+          unitFormError.textContent = json.error || 'Error al guardar la unidad';
+          unitFormError.style.display = 'block';
+        }
+      } catch (err) {
+        unitFormError.textContent = 'Error de conexión con el servidor.';
+        unitFormError.style.display = 'block';
+      }
+    });
+  }
+
+  window.editUnit = function (placa) {
+    const u = fleetData.find(item => item.placa === placa);
+    if (u) openUnitModal(u);
+  };
+
+  window.deleteUnit = async function (placa) {
+    if (!confirm(`¿Está seguro de eliminar la unidad con placa ${placa}?`)) return;
+
+    try {
+      const res = await fetch('/api/fleet/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ placa })
+      });
+      const data = await res.json();
+      if (data.status === 'OK') {
+        loadFleet();
+      } else {
+        alert(data.error || 'No se pudo eliminar');
+      }
+    } catch (err) {
+      alert('Error de conexión.');
+    }
+  };
+
+  window.testUnitTrama = function (placa) {
+    const u = fleetData.find(item => item.placa === placa);
+    if (!u) return;
+
+    // Cambiar a pestaña de pruebas
+    const tabBtn = document.querySelector('[data-target="view-testing"]');
+    if (tabBtn) tabBtn.click();
+
+    // Rellenar formulario de pruebas
+    setTimeout(() => {
+      document.getElementById('test-placa').value = u.placa;
+      document.getElementById('test-ruta').value = u.ruta || 'IO33B';
+      document.getElementById('test-imei').value = u.imei || '864201041234567';
+      if (u.modeloGps) {
+        document.getElementById('test-modelo').value = u.modeloGps;
+      }
+      updateTestPreview();
+    }, 100);
+  };
+
+  // --- BANCO DE PRUEBAS ATU ---
+  const testUnitSelect = document.getElementById('test-unit-select');
+  const testPlaca = document.getElementById('test-placa');
+  const testRuta = document.getElementById('test-ruta');
+  const testImei = document.getElementById('test-imei');
+  const testModelo = document.getElementById('test-modelo');
+  const testLat = document.getElementById('test-lat');
+  const testLon = document.getElementById('test-lon');
+  const testSpeed = document.getElementById('test-speed');
+  const testRumbo = document.getElementById('test-rumbo');
+  const testAcc = document.getElementById('test-acc');
+  const testEvento = document.getElementById('test-evento');
+  const testPreviewJson = document.getElementById('test-preview-json');
+  const testResultBox = document.getElementById('test-result-box');
+  const btnRunTestTrama = document.getElementById('btn-run-test-trama');
+
+  function populateTestUnits() {
+    if (!testUnitSelect) return;
+    const currentVal = testUnitSelect.value;
+    let opts = '<option value="">-- Personalizado / Manual --</option>';
+
+    fleetData.forEach(u => {
+      opts += `<option value="${u.placa}">[${u.placa}] Ruta: ${u.ruta || 'S/R'} ${u.imei ? `(GPS: ${u.modeloGps || 'OK'})` : '(Sin GPS)'}</option>`;
+    });
+
+    testUnitSelect.innerHTML = opts;
+    if (currentVal) testUnitSelect.value = currentVal;
+  }
+
+  if (testUnitSelect) {
+    testUnitSelect.addEventListener('change', () => {
+      const placa = testUnitSelect.value;
+      if (!placa) return;
+      const u = fleetData.find(item => item.placa === placa);
+      if (u) {
+        testPlaca.value = u.placa;
+        testRuta.value = u.ruta || 'IO33B';
+        testImei.value = u.imei || '864201041234561';
+        if (u.modeloGps) testModelo.value = u.modeloGps;
+        updateTestPreview();
+      }
+    });
+  }
+
+  function getTestPayload() {
+    return {
+      imei: testImei ? testImei.value.trim() : '864201041234561',
+      placa: testPlaca ? testPlaca.value.trim().toUpperCase() : 'A1B789',
+      ruta: testRuta ? testRuta.value.trim().toUpperCase() : 'IO33B',
+      latitud: parseFloat(testLat?.value || '-12.083812'),
+      longitud: parseFloat(testLon?.value || '-76.971038'),
+      altitud: 154.2,
+      velocidad: parseFloat(testSpeed?.value || '38.5'),
+      rumbo: parseFloat(testRumbo?.value || '180.0'),
+      timestamp: Math.floor(Date.now() / 1000),
+      evento: testEvento?.value || 'POSICION_PERIODICA',
+      ignicion: parseInt(testAcc?.value || '1', 10),
+      modeloGps: testModelo?.value || 'TELTONIKA_FMB920'
+    };
+  }
+
+  function updateTestPreview() {
+    if (!testPreviewJson) return;
+    const payload = getTestPayload();
+    testPreviewJson.textContent = JSON.stringify(payload, null, 2);
+  }
+
+  // Escuchar cambios en campos de prueba
+  [testPlaca, testRuta, testImei, testModelo, testLat, testLon, testSpeed, testRumbo, testAcc, testEvento].forEach(el => {
+    if (el) el.addEventListener('input', updateTestPreview);
+  });
+
+  // Botones de ubicación rápida
+  document.querySelectorAll('.quick-loc-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      testLat.value = btn.getAttribute('data-lat');
+      testLon.value = btn.getAttribute('data-lon');
+      updateTestPreview();
+    });
+  });
+
+  // Ejecutar prueba de transmisión
+  if (btnRunTestTrama) {
+    btnRunTestTrama.addEventListener('click', async () => {
+      const payload = getTestPayload();
+      testResultBox.innerHTML = '<span style="color: var(--text-dim);">⏳ Validando y transmitiendo al enlace WebSocket ATU...</span>';
+
+      try {
+        const res = await fetch('/api/test/telemetria', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.status === 'OK') {
+          const wsStatus = data.enlaceAtu === 'CONECTADO' ? '🟢 CONECTADO' : '🟡 RECONECTANDO / COLA OFFLINE';
+          testResultBox.innerHTML = `
+            <div class="result-tag-success">✅ TRAMA ACEPTADA POR LA NORMA ATU</div>
+            <div><strong>Placa:</strong> ${payload.placa} | <strong>Ruta:</strong> ${payload.ruta}</div>
+            <div><strong>Timestamp POSIX:</strong> ${payload.timestamp} (${new Date(payload.timestamp * 1000).toLocaleTimeString()})</div>
+            <div><strong>Coordenadas WGS84:</strong> Lat ${payload.latitud}, Lon ${payload.longitud}</div>
+            <div><strong>Velocidad / Rumbo:</strong> ${payload.velocidad} km/h / ${payload.rumbo}°</div>
+            <div style="margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.4rem;">
+              <strong>Enlace WebSocket ATU:</strong> ${wsStatus} (${data.enviadoAtu ? 'Transmitida inmediatamente' : 'Encolada en buffer de respaldo'})
+            </div>
+            <div style="color: #34d399; font-size: 0.75rem; margin-top: 0.3rem;">
+              ✔ La trama ha sido inyectada y el visualizador en vivo ya la refleja en el mapa.
+            </div>
+          `;
+        } else {
+          testResultBox.innerHTML = `
+            <div class="result-tag-error">❌ TRAMA RECHAZADA</div>
+            <div style="color: #f87171;"><strong>Motivo:</strong> ${data.error || 'Error de validación'}</div>
+            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.4rem;">
+              Revise que la placa contenga 6 caracteres alfanuméricos, que las coordenadas WGS84 sean válidas y que el IMEI posea 15 dígitos.
+            </div>
+          `;
+        }
+      } catch (err) {
+        testResultBox.innerHTML = `
+          <div class="result-tag-error">❌ ERROR DE COMUNICACIÓN</div>
+          <div>${err.message}</div>
+        `;
+      }
+    });
+  }
+
+  // Cargar inventario inicial de flota
+  loadFleet();
 
   // Iniciar conexión en tiempo real al cargar página
   initSse();

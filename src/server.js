@@ -10,6 +10,7 @@ const { validateAndNormalize } = require('./validator');
 const stateManager = require('./state-manager');
 const atuForwarder = require('./atu-forwarder');
 const tcpIngest = require('./ingest/tcp-ingest');
+const fleetStore = require('./fleet-store');
 
 // Mapa de Clientes SSE activos
 const sseClients = new Set();
@@ -37,6 +38,17 @@ function broadcastSse(event, data) {
  * @returns {{ success: boolean, error?: string, bus?: Object }}
  */
 function processIncomingTelemetry(rawData) {
+  // Si viene con IMEI pero sin placa/ruta (típico de GPS físico Teltonika/Suntech), mapear automáticamente
+  if (rawData.imei && (!rawData.placa || !rawData.ruta)) {
+    const assigned = fleetStore.getByImei(rawData.imei);
+    if (assigned) {
+      rawData.placa = rawData.placa || assigned.placa;
+      rawData.ruta = rawData.ruta || assigned.ruta;
+      rawData.padron = rawData.padron || assigned.padron;
+      rawData.modeloGps = rawData.modeloGps || assigned.modeloGps;
+    }
+  }
+
   const result = validateAndNormalize(rawData);
   if (!result.isValid) {
     return { success: false, error: result.error };
@@ -53,7 +65,7 @@ function processIncomingTelemetry(rawData) {
   // 3. Notificar en tiempo real al visualizador web vía SSE
   broadcastSse('telemetry', updatedBus);
 
-  return { success: true, bus: updatedBus };
+  return { success: true, bus: updatedBus, atuPayload };
 }
 
 // Escuchar telemetría que ingrese por TCP
@@ -198,6 +210,137 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'OK', procesados: list.length, aceptados: accepted }));
       } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // 7. Gestión de Flota e Inventario GPS: GET /api/fleet
+  if (method === 'GET' && pathname === '/api/fleet') {
+    const units = fleetStore.getAll();
+    const stats = fleetStore.getStats();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ units, stats }));
+    return;
+  }
+
+  // 8. Crear o Actualizar Unidad en Flota: POST /api/fleet
+  if (method === 'POST' && pathname === '/api/fleet') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = fleetStore.saveUnit(json);
+        if (result.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'OK', unit: result.unit }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ERROR', error: result.error }));
+        }
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // 9. Asignar GPS a Unidad: POST /api/fleet/assign
+  if (method === 'POST' && pathname === '/api/fleet/assign') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { placa, imei, modeloGps } = JSON.parse(body);
+        const result = fleetStore.assignGps(placa, imei, modeloGps);
+        if (result.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'OK', unit: result.unit }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ERROR', error: result.error }));
+        }
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // 10. Desasignar GPS de Unidad: POST /api/fleet/unassign
+  if (method === 'POST' && pathname === '/api/fleet/unassign') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { placa } = JSON.parse(body);
+        const result = fleetStore.unassignGps(placa);
+        if (result.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'OK', unit: result.unit }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ERROR', error: result.error }));
+        }
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // 11. Eliminar Unidad: POST /api/fleet/delete
+  if (method === 'POST' && pathname === '/api/fleet/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { placa } = JSON.parse(body);
+        const result = fleetStore.deleteUnit(placa);
+        if (result.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'OK' }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ERROR', error: result.error }));
+        }
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // 12. Banco de Pruebas ATU: POST /api/test/telemetria
+  if (method === 'POST' && pathname === '/api/test/telemetria') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = processIncomingTelemetry(json);
+        if (result.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            status: 'OK',
+            valido: true,
+            atuPayload: result.atuPayload,
+            enviadoAtu: atuForwarder.status === 'CONECTADO',
+            enlaceAtu: atuForwarder.status,
+            metricas: atuForwarder.getMetrics()
+          }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ERROR', valido: false, error: result.error }));
+        }
+      } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
       }

@@ -81,48 +81,351 @@
     </div>
   </header>
 
-  <!-- Contenedor Principal: Sidebar + Mapa -->
+  <!-- Barra de Pestañas de Navegación -->
+  <nav class="sub-nav">
+    <div class="nav-tabs-container">
+      <button class="nav-tab-btn active" data-target="view-map">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+          <line x1="8" y1="2" x2="8" y2="18"></line>
+          <line x1="16" y1="6" x2="16" y2="22"></line>
+        </svg>
+        <span>🗺️ Mapa en Vivo</span>
+      </button>
+
+      <button class="nav-tab-btn" data-target="view-fleet">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="1" y="3" width="15" height="13" rx="2"></rect>
+          <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+          <circle cx="5.5" cy="18.5" r="2.5"></circle>
+          <circle cx="18.5" cy="18.5" r="2.5"></circle>
+        </svg>
+        <span>🚍 Flota y Asignación GPS</span>
+      </button>
+
+      <button class="nav-tab-btn" data-target="view-testing">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="12" y1="18" x2="12" y2="12"></line>
+          <line x1="9" y1="15" x2="15" y2="15"></line>
+        </svg>
+        <span>🧪 Banco de Pruebas ATU</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Contenedor Principal con Vistas por Pestaña -->
   <main class="main-container">
-    <!-- Barra Lateral de Monitoreo -->
-    <aside class="sidebar" id="sidebar">
-      <!-- Filtros y Búsqueda -->
-      <div class="sidebar-search-box">
-        <div class="search-input-wrapper">
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input type="text" id="bus-search" placeholder="Buscar placa..." autocomplete="off">
+    
+    <!-- PESTAÑA 1: MAPA EN VIVO -->
+    <div class="view-panel active" id="view-map">
+      <!-- Barra Lateral de Monitoreo -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-search-box">
+          <div class="search-input-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="bus-search" placeholder="Buscar placa..." autocomplete="off">
+          </div>
+
+          <div class="filter-pills">
+            <button class="filter-pill active" data-filter="TODOS">Todos (<span id="filter-all-count">0</span>)</button>
+            <button class="filter-pill" data-filter="MOVIMIENTO" title="En marcha (> 5 km/h)">🟢 (<span id="filter-mov-count">0</span>)</button>
+            <button class="filter-pill" data-filter="DETENIDO" title="Detenido con motor encendido">🟡 (<span id="filter-det-count">0</span>)</button>
+            <button class="filter-pill" data-filter="OFFLINE" title="Sin reporte o motor apagado">🔴 (<span id="filter-off-count">0</span>)</button>
+          </div>
         </div>
 
-        <div class="filter-pills">
-          <button class="filter-pill active" data-filter="TODOS">Todos (<span id="filter-all-count">0</span>)</button>
-          <button class="filter-pill" data-filter="MOVIMIENTO" title="En marcha (> 5 km/h)">🟢 (<span id="filter-mov-count">0</span>)</button>
-          <button class="filter-pill" data-filter="DETENIDO" title="Detenido con motor encendido">🟡 (<span id="filter-det-count">0</span>)</button>
-          <button class="filter-pill" data-filter="OFFLINE" title="Sin reporte o motor apagado">🔴 (<span id="filter-off-count">0</span>)</button>
+        <!-- Cuadrícula de Placas (2 Columnas) -->
+        <div class="bus-list" id="bus-list">
+          <div class="empty-state">
+            <p>Esperando unidades...</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Contenedor del Mapa Leaflet -->
+      <section class="map-wrapper">
+        <div id="map"></div>
+
+        <!-- Leyenda Rápida de Estados -->
+        <div class="map-legend">
+          <div class="legend-item"><span class="legend-badge bg-moving"></span> En ruta (&gt; 5 km/h)</div>
+          <div class="legend-item"><span class="legend-badge bg-stopped"></span> Detenido (ACC ON)</div>
+          <div class="legend-item"><span class="legend-badge bg-offline"></span> Sin reporte (&gt; 90s)</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- PESTAÑA 2: GESTIÓN DE FLOTA Y ASIGNACIÓN DE GPS -->
+    <div class="view-panel" id="view-fleet">
+      <div class="fleet-view-container">
+        <!-- Tarjetas de Resumen -->
+        <div class="fleet-stats-cards">
+          <div class="f-stat-card">
+            <div class="f-stat-icon icon-blue">🚍</div>
+            <div>
+              <div class="f-stat-value" id="f-stat-total">0</div>
+              <div class="f-stat-label">Total Unidades</div>
+            </div>
+          </div>
+
+          <div class="f-stat-card">
+            <div class="f-stat-icon icon-green">📡</div>
+            <div>
+              <div class="f-stat-value text-success" id="f-stat-con-gps">0</div>
+              <div class="f-stat-label">Con GPS Asignado</div>
+            </div>
+          </div>
+
+          <div class="f-stat-card">
+            <div class="f-stat-icon icon-red">⚠️</div>
+            <div>
+              <div class="f-stat-value text-error" id="f-stat-sin-gps">0</div>
+              <div class="f-stat-label">Sin GPS Asignado</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Acciones y Filtros -->
+        <div class="fleet-action-bar">
+          <div class="fleet-filters">
+            <input type="text" class="fleet-search-input" id="fleet-filter-search" placeholder="Buscar por placa o padrón...">
+            <div class="filter-pills" style="display: flex;">
+              <button class="filter-pill active" data-fleet-filter="TODAS">Todas</button>
+              <button class="filter-pill" data-fleet-filter="CON_GPS">🟢 Con GPS</button>
+              <button class="filter-pill" data-fleet-filter="SIN_GPS">⚠️ Sin GPS</button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="btn-open-add-unit">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>Registrar Unidad / Asignar GPS</span>
+          </button>
+        </div>
+
+        <!-- Tabla de Flota -->
+        <div class="fleet-table-wrapper">
+          <table class="fleet-table">
+            <thead>
+              <tr>
+                <th>Placa</th>
+                <th>Ruta ATU</th>
+                <th>Padrón</th>
+                <th>Estado del GPS</th>
+                <th>Modelo de GPS</th>
+                <th>IMEI Módem (15 dígitos)</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="fleet-table-body">
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Cargando inventario de flota...</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
+    </div>
 
-      <!-- Cuadrícula de Placas (2 Columnas) -->
-      <div class="bus-list" id="bus-list">
-        <div class="empty-state">
-          <p>Esperando unidades...</p>
+    <!-- PESTAÑA 3: BANCO DE PRUEBAS ATU -->
+    <div class="view-panel" id="view-testing">
+      <div class="testing-view-container">
+        <div class="testing-grid">
+          <!-- Formulario de Telemetría -->
+          <div class="testing-card">
+            <div class="card-heading">
+              <span>🧪 Parámetros de la Trama de Prueba</span>
+            </div>
+
+            <div class="form-field">
+              <label>Seleccionar Unidad Registrada</label>
+              <select id="test-unit-select">
+                <option value="">-- Personalizado / Manual --</option>
+              </select>
+            </div>
+
+            <div class="form-group-grid">
+              <div class="form-field">
+                <label>Placa (6 Caracteres)</label>
+                <input type="text" id="test-placa" value="A1B789" maxlength="6" style="text-transform: uppercase;">
+              </div>
+              <div class="form-field">
+                <label>Código de Ruta ATU</label>
+                <input type="text" id="test-ruta" value="IO33B">
+              </div>
+            </div>
+
+            <div class="form-group-grid">
+              <div class="form-field">
+                <label>IMEI del GPS (15 Dígitos)</label>
+                <input type="text" id="test-imei" value="864201041234561" maxlength="15">
+              </div>
+              <div class="form-field">
+                <label>Modelo GPS Homologado</label>
+                <select id="test-modelo">
+                  <option value="TELTONIKA_FMB920">TELTONIKA_FMB920</option>
+                  <option value="TELTONIKA_FMC130">TELTONIKA_FMC130</option>
+                  <option value="SUNTECH_ST310">SUNTECH_ST310</option>
+                  <option value="SUNTECH_ST340">SUNTECH_ST340</option>
+                  <option value="QUECLINK_GV300">QUECLINK_GV300</option>
+                  <option value="CONCOX_GT06">CONCOX_GT06</option>
+                  <option value="SIMULADOR">SIMULADOR</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group-grid">
+              <div class="form-field">
+                <label>Latitud (WGS 84)</label>
+                <input type="number" step="0.000001" id="test-lat" value="-12.083812">
+              </div>
+              <div class="form-field">
+                <label>Longitud (WGS 84)</label>
+                <input type="number" step="0.000001" id="test-lon" value="-76.971038">
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label>Puntos Rápidos de Lima</label>
+              <div class="quick-locations">
+                <button type="button" class="quick-loc-btn" data-lat="-12.083812" data-lon="-76.971038">Javier Prado (Óvalo Monitor)</button>
+                <button type="button" class="quick-loc-btn" data-lat="-12.091215" data-lon="-77.026478">Vía Expresa (Javier Prado)</button>
+                <button type="button" class="quick-loc-btn" data-lat="-12.046374" data-lon="-77.042793">Plaza Dos de Mayo</button>
+                <button type="button" class="quick-loc-btn" data-lat="-12.021500" data-lon="-77.114300">Aeropuerto Jorge Chávez</button>
+              </div>
+            </div>
+
+            <div class="form-group-grid">
+              <div class="form-field">
+                <label>Velocidad (km/h)</label>
+                <input type="number" step="0.1" id="test-speed" value="38.5">
+              </div>
+              <div class="form-field">
+                <label>Rumbo (0 - 360°)</label>
+                <input type="number" step="0.1" id="test-rumbo" value="180.0">
+              </div>
+            </div>
+
+            <div class="form-group-grid">
+              <div class="form-field">
+                <label>Ignición (Motor ACC)</label>
+                <select id="test-acc">
+                  <option value="1">1 - ENCENDIDO (ACC ON)</option>
+                  <option value="0">0 - APAGADO (ACC OFF)</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Evento</label>
+                <input type="text" id="test-evento" value="POSICION_PERIODICA">
+              </div>
+            </div>
+
+            <button type="button" class="btn-transmit-test" id="btn-run-test-trama">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+              <span>Transmitir Trama de Prueba a ATU</span>
+            </button>
+          </div>
+
+          <!-- Panel de Resultados en Tiempo Real -->
+          <div class="testing-card">
+            <div class="card-heading">
+              <span>📋 Previsualización y Diagnóstico del Enlace ATU</span>
+            </div>
+
+            <div style="font-size: 0.75rem; color: var(--text-muted);">
+              JSON generado en tiempo real según la Especificación Técnica ATU:
+            </div>
+            <div class="trama-code-wrapper" style="max-height: 280px; overflow-y: auto;">
+              <pre class="trama-code" id="test-preview-json">{ ... }</pre>
+            </div>
+
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+              Respuesta del Gateway y Servidor Receptor ATU:
+            </div>
+            <div class="test-result-box" id="test-result-box">
+              Haga clic en <strong>"Transmitir Trama de Prueba a ATU"</strong> para enviar la posición y verificar la validación y confirmación ACK.
+            </div>
+          </div>
         </div>
       </div>
-    </aside>
+    </div>
 
-    <!-- Contenedor del Mapa Leaflet -->
-    <section class="map-wrapper">
-      <div id="map"></div>
-
-      <!-- Leyenda Rápida de Estados -->
-      <div class="map-legend">
-        <div class="legend-item"><span class="legend-badge bg-moving"></span> En ruta (&gt; 5 km/h)</div>
-        <div class="legend-item"><span class="legend-badge bg-stopped"></span> Detenido (ACC ON)</div>
-        <div class="legend-item"><span class="legend-badge bg-offline"></span> Sin reporte (&gt; 90s)</div>
-      </div>
-    </section>
   </main>
+
+  <!-- Modal Registrar / Asignar GPS a Unidad -->
+  <div class="modal-overlay" id="modal-unit-form">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span id="unit-modal-title">➕ Registrar Unidad / Asignar GPS</span>
+        </div>
+        <button class="modal-close-btn" id="modal-unit-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-save-unit" style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div class="form-group-grid">
+            <div class="form-field">
+              <label>Placa (6 Caracteres) *</label>
+              <input type="text" id="unit-form-placa" required maxlength="6" placeholder="ej. A1B789" style="text-transform: uppercase;">
+            </div>
+            <div class="form-field">
+              <label>Ruta ATU *</label>
+              <input type="text" id="unit-form-ruta" required placeholder="ej. IO33B">
+            </div>
+          </div>
+
+          <div class="form-group-grid">
+            <div class="form-field">
+              <label>Padrón Interno</label>
+              <input type="text" id="unit-form-padron" placeholder="ej. 12">
+            </div>
+            <div class="form-field">
+              <label>Modelo de GPS</label>
+              <select id="unit-form-modelo">
+                <option value="">-- Sin GPS por ahora --</option>
+                <option value="TELTONIKA_FMB920">TELTONIKA_FMB920</option>
+                <option value="TELTONIKA_FMC130">TELTONIKA_FMC130</option>
+                <option value="SUNTECH_ST310">SUNTECH_ST310</option>
+                <option value="SUNTECH_ST340">SUNTECH_ST340</option>
+                <option value="QUECLINK_GV300">QUECLINK_GV300</option>
+                <option value="CONCOX_GT06">CONCOX_GT06</option>
+                <option value="SIMULADOR">SIMULADOR</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label>IMEI del Equipo GPS (15 Dígitos)</label>
+            <input type="text" id="unit-form-imei" maxlength="15" placeholder="Dejar en blanco si aún no tiene GPS">
+            <small style="color: var(--text-dim); font-size: 0.65rem; margin-top: 2px;">
+              El IMEI identifica al módem del bus cuando ingresa la telemetría automáticamente.
+            </small>
+          </div>
+
+          <div class="form-field">
+            <label>Notas / Observaciones</label>
+            <input type="text" id="unit-form-notas" placeholder="ej. Operando en corredor Javier Prado">
+          </div>
+
+          <div id="unit-form-error" style="color: #f87171; font-size: 0.75rem; display: none;"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-unit">Cancelar</button>
+        <button class="btn btn-primary" id="btn-submit-unit">Guardar Unidad</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal Inspector de Trama ATU JSON -->
   <div class="modal-overlay" id="modal-trama">
