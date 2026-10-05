@@ -41,7 +41,6 @@
   const elCountUnits = document.getElementById('count-units');
   const elBusList = document.getElementById('bus-list');
   const elBusSearch = document.getElementById('bus-search');
-  const elActivityLog = document.getElementById('activity-log');
   const elFilterAll = document.getElementById('filter-all-count');
   const elFilterMov = document.getElementById('filter-mov-count');
   const elFilterDet = document.getElementById('filter-det-count');
@@ -246,39 +245,18 @@
     filtered.forEach(bus => {
       const isSelected = bus.placa === state.selectedPlaca;
       const st = bus.estadoOperacional || 'OFFLINE';
-      const color = st === 'MOVIMIENTO' ? 'var(--color-green)' : (st === 'DETENIDO' ? 'var(--color-yellow)' : 'var(--color-red)');
-      const hora = bus.timestamp ? new Date(bus.timestamp * 1000).toLocaleTimeString() : '--:--:--';
-      const atuSt = bus.atuStatus || 'PENDIENTE';
 
       html += `
-        <div class="bus-card ${isSelected ? 'active-selected' : ''}" data-placa="${bus.placa}">
-          <div class="bus-card-strip" style="background-color: ${color};"></div>
-          <div class="bus-card-header">
-            <div>
-              <span class="bus-placa-badge">${bus.placa}</span>
-              <span class="bus-ruta-badge" style="margin-left: 6px;">${bus.ruta || 'S/R'}</span>
-            </div>
-            <span class="atu-badge atu-${atuSt}">${atuSt}</span>
-          </div>
-          <div class="bus-card-details">
-            <div>Vel: <strong>${bus.velocidad} km/h</strong></div>
-            <div>Rumbo: <strong>${bus.rumbo}°</strong></div>
-            <div>Padrón: <strong>${bus.padron || '-'}</strong></div>
-            <div>Hora: <strong>${hora}</strong></div>
-          </div>
-          <div class="bus-card-footer">
-            <button class="btn-card-trama" onclick="event.stopPropagation(); window.inspectTrama('${bus.placa}')">
-              📋 Ver Trama ATU
-            </button>
-            <span style="color: var(--text-dim); font-size: 0.65rem;">GPS: ${bus.modeloGps || 'GPS'}</span>
-          </div>
+        <div class="bus-card ${isSelected ? 'active-selected' : ''}" data-placa="${bus.placa}" title="${bus.placa} - Estado: ${st}">
+          <span class="bus-status-dot st-${st}"></span>
+          <span class="bus-card-placa">${bus.placa}</span>
         </div>
       `;
     });
 
     elBusList.innerHTML = html;
 
-    // Vincular clicks
+    // Vincular clicks: al hacer click a la placa, centrar en el mapa y abrir su popup técnico con la trama
     elBusList.querySelectorAll('.bus-card').forEach(card => {
       card.addEventListener('click', () => {
         const placa = card.getAttribute('data-placa');
@@ -288,19 +266,10 @@
   }
 
   /**
-   * Agrega una línea al registro de actividad en vivo
+   * Log interno para depuración (consola)
    */
   function appendLog(text) {
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    const time = new Date().toLocaleTimeString();
-    entry.textContent = `[${time}] ${text}`;
-
-    elActivityLog.appendChild(entry);
-    if (elActivityLog.children.length > 50) {
-      elActivityLog.removeChild(elActivityLog.firstChild);
-    }
-    elActivityLog.scrollTop = elActivityLog.scrollHeight;
+    console.log(`[OpenSICM Monitor] ${text}`);
   }
 
   /**

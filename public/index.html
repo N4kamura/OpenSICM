@@ -92,33 +92,21 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input type="text" id="bus-search" placeholder="Buscar por placa, ruta o padrón..." autocomplete="off">
+          <input type="text" id="bus-search" placeholder="Buscar placa..." autocomplete="off">
         </div>
 
         <div class="filter-pills">
           <button class="filter-pill active" data-filter="TODOS">Todos (<span id="filter-all-count">0</span>)</button>
-          <button class="filter-pill" data-filter="MOVIMIENTO">🟢 En Marcha (<span id="filter-mov-count">0</span>)</button>
-          <button class="filter-pill" data-filter="DETENIDO">🟡 Parados (<span id="filter-det-count">0</span>)</button>
-          <button class="filter-pill" data-filter="OFFLINE">🔴 Offline (<span id="filter-off-count">0</span>)</button>
+          <button class="filter-pill" data-filter="MOVIMIENTO" title="En marcha (> 5 km/h)">🟢 (<span id="filter-mov-count">0</span>)</button>
+          <button class="filter-pill" data-filter="DETENIDO" title="Detenido con motor encendido">🟡 (<span id="filter-det-count">0</span>)</button>
+          <button class="filter-pill" data-filter="OFFLINE" title="Sin reporte o motor apagado">🔴 (<span id="filter-off-count">0</span>)</button>
         </div>
       </div>
 
-      <!-- Lista de Unidades -->
+      <!-- Cuadrícula de Placas (2 Columnas) -->
       <div class="bus-list" id="bus-list">
         <div class="empty-state">
-          <p>Esperando telemetría de unidades...</p>
-          <small>Inicie el simulador con <code>npm run simulator</code> o conecte sus equipos GPS.</small>
-        </div>
-      </div>
-
-      <!-- Feed de Eventos Recientes -->
-      <div class="sidebar-footer">
-        <div class="footer-title">
-          <span>Últimos Eventos ATU</span>
-          <span class="live-tag">LIVE</span>
-        </div>
-        <div class="activity-log" id="activity-log">
-          <div class="log-entry">Sistema iniciado. Esperando conexión...</div>
+          <p>Esperando unidades...</p>
         </div>
       </div>
     </aside>
