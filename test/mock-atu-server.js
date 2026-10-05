@@ -71,7 +71,13 @@ wss.on('connection', (ws, request) => {
         return;
       }
 
-      console.log(`[Mock ATU] ✅ TRAMA #${totalReceived} ACEPTADA | Placa: ${msg.placa.padEnd(7)} | Ruta: ${msg.ruta.padEnd(6)} | Vel: ${String(msg.velocidad).padStart(4)} km/h | Lat: ${msg.latitud} | Lon: ${msg.longitud}`);
+      console.log(`\n======================================================================`);
+      console.log(`📥 [Mock ATU Receptor] TRAMA #${totalReceived} RECIBIDA Y VALIDADA CONFORME`);
+      console.log(`----------------------------------------------------------------------`);
+      console.log(JSON.stringify(msg, null, 2));
+      console.log(`----------------------------------------------------------------------`);
+      console.log(`>> Emitiendo ACK de confirmación a la pasarela (Placa: ${msg.placa})`);
+      console.log(`======================================================================\n`);
 
       // Enviar confirmación ACK a la pasarela
       ws.send(JSON.stringify({

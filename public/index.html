@@ -136,7 +136,40 @@
     </section>
   </main>
 
-  <!-- Leaflet JS -->
+  <!-- Modal Inspector de Trama ATU JSON -->
+  <div class="modal-overlay" id="modal-trama">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>📋 Trama de Telemetría Oficial SICM - ATU</span>
+        </div>
+        <button class="modal-close-btn" id="modal-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-info-bar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+          </svg>
+          <span>Esta es la estructura JSON exacta que se transmite cada 30 segundos al WebSocket de la ATU.</span>
+        </div>
+        <div class="trama-code-wrapper">
+          <pre class="trama-code" id="trama-json-display">{ ... }</pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-copy-trama">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span id="copy-btn-text">Copiar JSON</span>
+        </button>
+        <button class="btn btn-primary" id="btn-modal-ok">Entendido</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS (Biblioteca Libre de Mapas) -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Lógica de Frontend Vanilla -->
   <script src="/app.js"></script>

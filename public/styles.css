@@ -527,36 +527,44 @@ body {
 .bg-offline { background-color: var(--color-red); }
 
 /* --- MARCADORES PERSONALIZADOS LEAFLET --- */
+.leaflet-div-icon,
+.bus-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
 .custom-bus-marker {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   pointer-events: auto;
+  user-select: none;
 }
 
 .bus-marker-plate {
-  background: rgba(15, 23, 42, 0.9);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 800;
   font-family: monospace;
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid var(--border-light);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   white-space: nowrap;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-  margin-bottom: 2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  margin-bottom: 3px;
+  letter-spacing: 0.05em;
 }
 
 .bus-marker-icon {
-  width: 32px;
-  height: 32px;
-  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  width: 36px;
+  height: 36px;
+  transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.75));
 }
 
 .bus-marker-icon svg {
@@ -586,7 +594,7 @@ body {
 
 .popup-container {
   padding: 0.85rem;
-  width: 250px;
+  width: 270px;
 }
 
 .popup-header {
@@ -637,3 +645,139 @@ body {
   align-items: center;
   font-size: 0.7rem;
 }
+
+.btn-view-trama {
+  margin-top: 0.6rem;
+  width: 100%;
+  background: #1e3a8a;
+  color: #93c5fd;
+  border: 1px solid #3b82f6;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: all 0.2s;
+}
+
+.btn-view-trama:hover {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+/* --- MODAL INSPECTOR DE TRAMA ATU --- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.modal-content {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 620px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 1rem 1.25rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.modal-info-bar {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trama-code-wrapper {
+  background: #090d16;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1rem;
+  position: relative;
+}
+
+.trama-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #38bdf8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.modal-footer {
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+

@@ -26,16 +26,11 @@
     attributionControl: false
   }).setView(LIMA_COORDS, DEFAULT_ZOOM);
 
-  // Capa Base OpenStreetMap CartoDB Dark / Voyager
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  // Capa Base 100% Gratuita de OpenStreetMap (Sin API Key, Sin Carto, Cero Costo)
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    subdomains: 'abcd'
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> colaboradores'
   }).addTo(map);
-
-  // Atribución discreta
-  L.control.attribution({ position: 'bottomleft' })
-    .addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &bull; OpenSICM')
-    .addTo(map);
 
   // Elementos del DOM
   const elAtuStatusText = document.getElementById('atu-status-text');
@@ -70,19 +65,23 @@
       <div class="custom-bus-marker">
         <div class="bus-marker-plate">${bus.placa}</div>
         <div class="bus-marker-icon" style="transform: rotate(${rumbo}deg);">
-          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Sombra de base -->
-            <ellipse cx="20" cy="22" rx="14" ry="16" fill="rgba(0,0,0,0.3)"/>
-            <!-- Carrocería de Bus con Flecha Direccional -->
-            <path d="M12 10C12 5.5 15.5 2 20 2C24.5 2 28 5.5 28 10V32C28 35.3 25.3 38 22 38H18C14.7 38 12 35.3 12 32V10Z" fill="${color}" stroke="#ffffff" stroke-width="1.8"/>
-            <!-- Parabrisas frontal orientado hacia arriba (0 deg) -->
-            <path d="M14 8C14 6.5 16.5 5 20 5C23.5 5 26 6.5 26 8V13H14V8Z" fill="#1e293b"/>
+            <ellipse cx="22" cy="24" rx="15" ry="17" fill="rgba(0,0,0,0.4)"/>
+            <!-- Carrocería de Bus Urbano con Cabina Frontal -->
+            <rect x="13" y="6" width="18" height="32" rx="4" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+            <!-- Flecha Direccional de Rumbo hacia arriba -->
+            <polygon points="22,1 17,7 27,7" fill="#ffffff" stroke="${color}" stroke-width="1"/>
+            <!-- Parabrisas frontal -->
+            <rect x="15" y="8" width="14" height="6" rx="1.5" fill="#0f172a"/>
             <!-- Ventanillas laterales -->
-            <rect x="14" y="16" width="3" height="14" rx="1" fill="#334155"/>
-            <rect x="23" y="16" width="3" height="14" rx="1" fill="#334155"/>
-            <!-- Faros delanteros -->
-            <circle cx="15" cy="4" r="1.5" fill="#fef08a"/>
-            <circle cx="25" cy="4" r="1.5" fill="#fef08a"/>
+            <rect x="14" y="16" width="3" height="16" rx="1" fill="#1e293b"/>
+            <rect x="27" y="16" width="3" height="16" rx="1" fill="#1e293b"/>
+            <!-- Techo / línea central -->
+            <line x1="22" y1="16" x2="22" y2="34" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+            <!-- Luces delanteras -->
+            <circle cx="15.5" cy="7" r="1.5" fill="#fef08a"/>
+            <circle cx="28.5" cy="7" r="1.5" fill="#fef08a"/>
           </svg>
         </div>
       </div>
@@ -90,7 +89,7 @@
   }
 
   /**
-   * Genera el contenido del Popup con detalles técnicos
+   * Genera el contenido del Popup con detalles técnicos y botón para ver trama
    */
   function createPopupContent(bus) {
     const hora = bus.timestamp ? new Date(bus.timestamp * 1000).toLocaleTimeString() : '--:--:--';
@@ -136,6 +135,15 @@
           <span style="color: var(--text-dim); font-size: 0.65rem;">IMEI: ${bus.imei || '-'}</span>
           <span style="color: var(--text-dim); font-size: 0.65rem;">Lat: ${bus.latitud?.toFixed(4)}, Lon: ${bus.longitud?.toFixed(4)}</span>
         </div>
+        <button class="btn-view-trama" onclick="window.inspectTrama('${bus.placa}')">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          📋 Ver Trama JSON ATU
+        </button>
       </div>
     `;
   }
@@ -257,6 +265,12 @@
             <div>Rumbo: <strong>${bus.rumbo}°</strong></div>
             <div>Padrón: <strong>${bus.padron || '-'}</strong></div>
             <div>Hora: <strong>${hora}</strong></div>
+          </div>
+          <div class="bus-card-footer">
+            <button class="btn-card-trama" onclick="event.stopPropagation(); window.inspectTrama('${bus.placa}')">
+              📋 Ver Trama ATU
+            </button>
+            <span style="color: var(--text-dim); font-size: 0.65rem;">GPS: ${bus.modeloGps || 'GPS'}</span>
           </div>
         </div>
       `;
@@ -410,6 +424,66 @@
   btnRecenter.addEventListener('click', () => {
     map.flyTo(LIMA_COORDS, DEFAULT_ZOOM, { duration: 1.0 });
   });
+
+  // --- INSPECTOR DE TRAMA ATU (MODAL) ---
+  const modal = document.getElementById('modal-trama');
+  const closeBtn = document.getElementById('modal-close-btn');
+  const okBtn = document.getElementById('btn-modal-ok');
+  const copyBtn = document.getElementById('btn-copy-trama');
+  const copyText = document.getElementById('copy-btn-text');
+
+  function closeModal() {
+    if (modal) modal.classList.remove('active');
+  }
+
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (okBtn) okBtn.addEventListener('click', closeModal);
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      const text = document.getElementById('trama-json-display').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        if (copyText) copyText.textContent = '¡Copiado al Portapapeles!';
+        setTimeout(() => {
+          if (copyText) copyText.textContent = 'Copiar JSON';
+        }, 2000);
+      });
+    });
+  }
+
+  window.inspectTrama = function (placa) {
+    const bus = state.buses.get(placa);
+    if (!bus) return;
+
+    // Generar la trama JSON reglamentaria exacta requerida por la ATU
+    const tramaAtu = {
+      imei: bus.imei || "864201041234567",
+      placa: bus.placa,
+      ruta: bus.ruta || "S/R",
+      latitud: bus.latitud,
+      longitud: bus.longitud,
+      altitud: bus.altitud || 150.0,
+      velocidad: bus.velocidad,
+      rumbo: bus.rumbo,
+      timestamp: bus.timestamp,
+      evento: bus.evento || "POSICION_PERIODICA",
+      ignicion: bus.ignicion !== undefined ? bus.ignicion : 1,
+      modeloGps: bus.modeloGps || "TELTONIKA_FMB920"
+    };
+
+    const display = document.getElementById('trama-json-display');
+    if (display) {
+      display.textContent = JSON.stringify(tramaAtu, null, 2);
+    }
+    if (modal) {
+      modal.classList.add('active');
+    }
+  };
 
   // Iniciar conexión en tiempo real al cargar página
   initSse();

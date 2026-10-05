@@ -226,12 +226,33 @@ async function runCycle() {
     if (res.error) {
       console.log(`❌ [${bus.placa}] Error conectando a Gateway: ${res.error}`);
     } else {
-      const icon = telemetry.velocidad > 5 ? '🟢' : (telemetry.ignicion === 1 ? '🟡' : '🔴');
-      console.log(`${icon} [${bus.placa}] Ruta: ${bus.ruta.padEnd(5)} | Vel: ${String(telemetry.velocidad).padStart(4)} km/h | Rumbo: ${String(telemetry.rumbo).padStart(5)}° | HTTP: ${res.statusCode}`);
+      const estado = telemetry.velocidad > 5 ? 'EN MARCHA' : (telemetry.ignicion === 1 ? 'DETENIDO CON MOTOR ENCENDIDO' : 'MOTOR APAGADO');
+      
+      // Mostrar la trama JSON reglamentaria exacta enviada a la ATU
+      const tramaAtu = {
+        imei: telemetry.imei,
+        placa: telemetry.placa,
+        ruta: telemetry.ruta,
+        latitud: telemetry.latitud,
+        longitud: telemetry.longitud,
+        altitud: telemetry.altitud,
+        velocidad: telemetry.velocidad,
+        rumbo: telemetry.rumbo,
+        timestamp: telemetry.timestamp,
+        evento: telemetry.evento,
+        ignicion: telemetry.ignicion,
+        modeloGps: telemetry.modeloGps
+      };
+
+      console.log(`----------------------------------------------------------------------`);
+      console.log(`🚍 TRAMA ATU ENVIADA | Placa: [${telemetry.placa}] | Ruta: [${telemetry.ruta}] | Padrón: [${bus.padron}]`);
+      console.log(JSON.stringify(tramaAtu, null, 2));
+      console.log(`>> Estado: ${estado} (${telemetry.velocidad} km/h) | Rumbo: ${telemetry.rumbo}° | Gateway HTTP: ${res.statusCode} OK`);
+      console.log(`----------------------------------------------------------------------`);
     }
   }
 
-  console.log(`Próximo reporte en ${INTERVAL_SEC} segundos...`);
+  console.log(`\n⏳ Próximo reporte de telemetría en ${INTERVAL_SEC} segundos...`);
 }
 
 // Iniciar simulación periódica
