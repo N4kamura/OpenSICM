@@ -18,6 +18,7 @@ module.exports = {
   GPS_TCP_ENABLED: process.env.GPS_TCP_ENABLED !== 'false',
   
   // Enlace ATU WebSocket
+  ATU_WS_ENABLED: process.env.ATU_WS_ENABLED !== 'false' && !process.argv.includes('--no-atu'),
   ATU_WS_ENDPOINT: process.env.ATU_WS_ENDPOINT || 'ws://localhost:5000/ws',
   ATU_COMPANY_TOKEN: process.env.ATU_COMPANY_TOKEN || 'TOKEN_DEMO',
   

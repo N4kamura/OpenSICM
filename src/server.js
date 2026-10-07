@@ -684,16 +684,22 @@ function start() {
     console.log(`🚀 OpenSICM Gateway iniciado exitosamente`);
     console.log(`🌐 Dashboard Web y API: http://localhost:${config.HTTP_PORT}`);
     console.log(`📡 Ingesta GPS TCP:      Puerto ${config.GPS_INGEST_PORT}`);
-    console.log(`🎯 Enlace ATU WebSocket: ${config.ATU_WS_ENDPOINT}`);
+    console.log(`🎯 Enlace ATU WebSocket: ${config.ATU_WS_ENABLED ? config.ATU_WS_ENDPOINT : 'Desactivado (Modo local / GTFS)'}`);
     console.log(`⏱️  Frecuencia ATU:       Cada ${config.TRANSMIT_INTERVAL_SEC} segundos`);
     console.log(`=======================================================`);
   });
 
   // Iniciar ingesta TCP para GPS físicos
-  tcpIngest.start();
+  if (config.GPS_TCP_ENABLED) {
+    tcpIngest.start();
+  }
 
-  // Iniciar cliente WebSocket hacia ATU
-  atuForwarder.connect();
+  // Iniciar cliente WebSocket hacia ATU (si está habilitado)
+  if (config.ATU_WS_ENABLED) {
+    atuForwarder.connect();
+  } else {
+    console.log(`[OpenSICM] Enlace ATU WebSocket desactivado (Modo local / Diseñador GTFS).`);
+  }
 }
 
 // Manejo de apagado graceful

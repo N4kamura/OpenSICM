@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
+    "start:gtfs": "node src/server.js --no-atu",
     "dev": "node --watch src/server.js",
+    "dev:gtfs": "node --watch src/server.js --no-atu",
     "simulator": "node simulator.js",
     "mock-atu": "node test/mock-atu-server.js",
     "test": "node test/run-tests.js"
