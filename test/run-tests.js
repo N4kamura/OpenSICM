@@ -238,6 +238,81 @@ async function runTests() {
     assert.ok(typeof summary.esHoraPunta === 'boolean');
   });
 
+  // --- 2c. PRUEBAS DE GTFS STORE Y EXPORTADOR CSV ---
+  console.log('\n--- 2c. Pruebas de GTFS Store (SQLite) y Exportador CSV ---');
+  const gtfsStore = require('../src/gtfs-store');
+
+  test('gtfsStore: inicializa datos base de demostración para Lima', () => {
+    const agency = gtfsStore.getAgency();
+    assert.ok(agency);
+    assert.strictEqual(agency.agency_timezone, 'America/Lima');
+
+    const routes = gtfsStore.getRoutes();
+    assert.ok(routes.length >= 2, 'Debe contener rutas de demostración (IO33B, CR42)');
+
+    const stops = gtfsStore.getStops();
+    assert.ok(stops.length >= 5, 'Debe contener paraderos de demostración');
+
+    const shapes = gtfsStore.getShapeList();
+    assert.ok(shapes.length >= 1, 'Debe contener trazo de demostración');
+  });
+
+  test('gtfsStore: guarda, recupera y elimina trazo geométrico (shapes.txt)', () => {
+    const points = [
+      { lat: -12.046374, lon: -77.042793 },
+      { lat: -12.050000, lon: -77.045000 },
+      { lat: -12.055000, lon: -77.050000 }
+    ];
+    const saveRes = gtfsStore.saveShape('TEST_SHAPE', points);
+    assert.strictEqual(saveRes.success, true);
+    assert.strictEqual(saveRes.totalPoints, 3);
+
+    const retrieved = gtfsStore.getShapePoints('TEST_SHAPE');
+    assert.strictEqual(retrieved.length, 3);
+    assert.strictEqual(retrieved[0].shape_pt_sequence, 1);
+
+    const delRes = gtfsStore.deleteShape('TEST_SHAPE');
+    assert.strictEqual(delRes.success, true);
+    assert.strictEqual(gtfsStore.getShapePoints('TEST_SHAPE').length, 0);
+  });
+
+  test('gtfsStore: gestiona frecuencias de despacho (frequencies.txt)', () => {
+    const saveRes = gtfsStore.saveFrequency({
+      trip_id: 'IO33B_IDA_PATTERN',
+      start_time: '22:00:00',
+      end_time: '23:30:00',
+      headway_secs: 600
+    });
+    assert.strictEqual(saveRes.success, true);
+
+    const freqs = gtfsStore.getFrequencies('IO33B_IDA_PATTERN');
+    const nightFreq = freqs.find(f => f.start_time === '22:00:00');
+    assert.ok(nightFreq);
+    assert.strictEqual(nightFreq.headway_secs, 600);
+
+    // Limpiar
+    gtfsStore.deleteFrequency(nightFreq.id);
+  });
+
+  test('gtfsStore.exportCsv: genera archivos estándar GTFS en formato CSV', () => {
+    const csvShapes = gtfsStore.exportCsv('shapes.txt');
+    assert.ok(csvShapes.includes('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence'));
+    assert.ok(csvShapes.includes('IO33B_IDA'));
+
+    const csvStops = gtfsStore.exportCsv('stops.txt');
+    assert.ok(csvStops.includes('stop_id,stop_name,stop_lat,stop_lon,location_type'));
+    assert.ok(csvStops.includes('TERM_PACHACUTEC'));
+
+    const csvRoutes = gtfsStore.exportCsv('routes.txt');
+    assert.ok(csvRoutes.includes('route_id,agency_id,route_short_name,route_long_name,route_type'));
+    assert.ok(csvRoutes.includes('IO33B'));
+
+    const csvFreqs = gtfsStore.exportCsv('frequencies.txt');
+    assert.ok(csvFreqs.includes('trip_id,start_time,end_time,headway_secs'));
+
+    assert.strictEqual(gtfsStore.exportCsv('desconocido.txt'), null);
+  });
+
   // --- 3. PRUEBA INTEGRAL EXTREMO A EXTREMO (MOCK ATU + GATEWAY + REST) ---
   console.log('\n--- 3. Prueba Integral de Enlace WebSocket y API REST ---');
 

@@ -112,6 +112,15 @@
         <span>🚍 Flota y Asignación GPS</span>
       </button>
 
+      <button class="nav-tab-btn" data-target="view-gtfs">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+        </svg>
+        <span>🗺️ Diseñador GTFS</span>
+      </button>
+
       <button class="nav-tab-btn" data-target="view-testing">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -516,6 +525,331 @@
             </div>
           </div>
         </div>
+    <!-- PESTAÑA: DISEÑADOR GTFS EN MAPA LEAFLET -->
+    <div class="view-panel" id="view-gtfs">
+      <div class="gtfs-view-container">
+        <!-- Barra Superior de Herramientas y Subpestañas GTFS -->
+        <div class="gtfs-header-bar">
+          <div>
+            <h2 class="kpis-title">🗺️ Diseñador de Rutas y Paraderos GTFS</h2>
+            <p class="kpis-subtitle">Cree geometrías en el mapa, paraderos oficiales y frecuencias de despacho para SQLite</p>
+          </div>
+          <div class="gtfs-subtabs">
+            <button class="gtfs-subtab-btn active" data-gtfs-tab="tab-gtfs-map">🗺️ Trazador en Mapa</button>
+            <button class="gtfs-subtab-btn" data-gtfs-tab="tab-gtfs-routes">🚍 Rutas y Viajes</button>
+            <button class="gtfs-subtab-btn" data-gtfs-tab="tab-gtfs-freqs">⏱️ Frecuencias</button>
+            <button class="gtfs-subtab-btn" data-gtfs-tab="tab-gtfs-export">📦 Exportar Archivos</button>
+          </div>
+        </div>
+
+        <!-- SUBPESTAÑA 1: MAPA INTERACTIVO (SHAPES & STOPS) -->
+        <div class="gtfs-subtab-content active" id="tab-gtfs-map">
+          <div class="gtfs-map-layout">
+            <!-- Barra Lateral de Herramientas de Edición -->
+            <div class="gtfs-map-sidebar">
+              <!-- Selector de Modo de Edición -->
+              <div class="gtfs-mode-selector">
+                <button class="gtfs-mode-btn active" id="btn-mode-shapes">
+                  <span>📍 Trazar Recorrido (Shapes)</span>
+                </button>
+                <button class="gtfs-mode-btn" id="btn-mode-stops">
+                  <span>🚏 Colocar Paraderos (Stops)</span>
+                </button>
+              </div>
+
+              <!-- PANEL MODO 1: SHAPES -->
+              <div id="gtfs-shapes-panel">
+                <div class="form-field">
+                  <label>Seleccionar o Crear Trazo</label>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <select id="gtfs-shape-select" style="flex: 1;">
+                      <option value="IO33B_IDA">IO33B_IDA (Ida)</option>
+                      <option value="IO33B_VUELTA">IO33B_VUELTA (Vuelta)</option>
+                      <option value="NUEVO">+ Crear Nuevo Trazo...</option>
+                    </select>
+                  </div>
+                  <input type="text" id="gtfs-shape-new-input" placeholder="Nombre (ej. CR42_IDA)" style="display: none; margin-top: 0.4rem; text-transform: uppercase;">
+                </div>
+
+                <!-- Botones de Acción de Trazado -->
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                  <button type="button" class="btn btn-primary" id="btn-toggle-drawing" style="justify-content: center;">
+                    <span id="btn-drawing-icon">✏️</span> <span id="btn-drawing-text">Activar Dibujo en Mapa</span>
+                  </button>
+
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn btn-secondary" id="btn-undo-point" style="flex: 1; justify-content: center;" title="Deshacer el último punto clickeado">
+                      ↩️ Deshacer
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btn-clear-shape" style="flex: 1; justify-content: center; color: #f87171;" title="Limpiar todos los puntos del trazo">
+                      🗑️ Limpiar
+                    </button>
+                  </div>
+
+                  <button type="button" class="btn btn-success" id="btn-save-shape-sql" style="justify-content: center; background: #059669; color: #fff;">
+                    💾 Guardar Trazo en SQLite
+                  </button>
+                </div>
+
+                <!-- Tarjeta Informativa del Trazo -->
+                <div class="gtfs-shape-stats-box">
+                  <div class="gtfs-stat-row">
+                    <span>Puntos en el Trazo:</span>
+                    <strong id="gtfs-pts-count" style="color: #38bdf8;">0</strong>
+                  </div>
+                  <div class="gtfs-stat-row">
+                    <span>Longitud del Recorrido:</span>
+                    <strong id="gtfs-dist-km" style="color: #34d399;">0.00 km</strong>
+                  </div>
+                </div>
+
+                <div class="gtfs-instructions">
+                  💡 <strong>Instrucciones:</strong> Haga clic en <em>"Activar Dibujo"</em> y luego haga clics sucesivos sobre el mapa siguiendo las avenidas para unir la polilínea oficial.
+                </div>
+              </div>
+
+              <!-- PANEL MODO 2: STOPS -->
+              <div id="gtfs-stops-panel" style="display: none;">
+                <div style="font-size: 0.78rem; color: #38bdf8; margin-bottom: 0.5rem;">
+                  📍 Haga clic en el mapa para colocar un paradero o terminal.
+                </div>
+
+                <form id="form-save-stop" style="display: flex; flex-direction: column; gap: 0.6rem;">
+                  <div class="form-field">
+                    <label>ID Paradero</label>
+                    <input type="text" id="gtfs-stop-id" required placeholder="ej. PAR_JAVIER_PRADO" style="text-transform: uppercase;">
+                  </div>
+                  <div class="form-field">
+                    <label>Nombre del Paradero</label>
+                    <input type="text" id="gtfs-stop-name" required placeholder="ej. Paradero Trébol JP">
+                  </div>
+                  <div class="form-field">
+                    <label>Tipo de Detención</label>
+                    <select id="gtfs-stop-type">
+                      <option value="0">0 - Paradero Ordinario en Vía</option>
+                      <option value="1">1 - Terminal / Cabecera (Origen o Retorno)</option>
+                    </select>
+                  </div>
+                  <div class="form-group-grid">
+                    <div class="form-field">
+                      <label>Latitud</label>
+                      <input type="number" step="0.000001" id="gtfs-stop-lat" required readonly style="background: rgba(0,0,0,0.3);">
+                    </div>
+                    <div class="form-field">
+                      <label>Longitud</label>
+                      <input type="number" step="0.000001" id="gtfs-stop-lon" required readonly style="background: rgba(0,0,0,0.3);">
+                    </div>
+                  </div>
+
+                  <button type="button" class="btn btn-primary" id="btn-save-stop-sql" style="justify-content: center;">
+                    💾 Guardar Paradero en SQLite
+                  </button>
+                </form>
+
+                <div style="margin-top: 0.8rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+                  Paraderos Guardados (<span id="gtfs-stops-count">0</span>)
+                </div>
+                <div class="gtfs-stops-mini-list" id="gtfs-stops-list">
+                  <!-- Lista dinámica de paraderos -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Mapa Leaflet Interactivo GTFS -->
+            <div class="gtfs-map-wrapper">
+              <div id="gtfs-map" style="width: 100%; height: 580px; border-radius: 8px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBPESTAÑA 2: RUTAS Y VIAJES -->
+        <div class="gtfs-subtab-content" id="tab-gtfs-routes">
+          <div class="gtfs-forms-grid">
+            <!-- 1. Empresa / Operador -->
+            <div class="testing-card">
+              <div class="card-heading">🏢 Empresa Operadora (agency.txt)</div>
+              <form id="form-gtfs-agency" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div class="form-field">
+                  <label>ID Empresa</label>
+                  <input type="text" id="agency-id" value="EMP_LIMA" required>
+                </div>
+                <div class="form-field">
+                  <label>Razón Social / Nombre</label>
+                  <input type="text" id="agency-name" value="Consorcio de Transporte Lima S.A." required>
+                </div>
+                <div class="form-field">
+                  <label>Sitio Web Oficial</label>
+                  <input type="url" id="agency-url" value="https://atu.gob.pe">
+                </div>
+                <div class="form-field">
+                  <label>Zona Horaria</label>
+                  <input type="text" id="agency-tz" value="America/Lima" readonly>
+                </div>
+                <button type="submit" class="btn btn-primary" style="justify-content: center;">Guardar Empresa</button>
+              </form>
+            </div>
+
+            <!-- 2. Catálogo de Rutas -->
+            <div class="testing-card">
+              <div class="card-heading">🚍 Rutas ATU (routes.txt)</div>
+              <form id="form-gtfs-route" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div class="form-group-grid">
+                  <div class="form-field">
+                    <label>Código de Ruta</label>
+                    <input type="text" id="route-short-name" required placeholder="ej. IO33B" style="text-transform: uppercase;">
+                  </div>
+                  <div class="form-field">
+                    <label>Tipo de Transporte</label>
+                    <select id="route-type">
+                      <option value="3">3 - Autobús Urbano</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-field">
+                  <label>Nombre Completo / Itinerario</label>
+                  <input type="text" id="route-long-name" placeholder="ej. Pachacútec - Javier Prado - Villa El Salvador">
+                </div>
+                <button type="submit" class="btn btn-primary" style="justify-content: center;">Registrar Ruta</button>
+              </form>
+
+              <div style="margin-top: 0.75rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">
+                RUTAS ACTIVAS EN SQLITE:
+              </div>
+              <div id="gtfs-routes-list" class="gtfs-items-container"></div>
+            </div>
+
+            <!-- 3. Plantillas de Viaje (trips.txt) -->
+            <div class="testing-card" style="grid-column: 1 / -1;">
+              <div class="card-heading">🔄 Plantillas de Viaje Ida y Vuelta (trips.txt)</div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                Vincula el código de ruta con el trazo geométrico y el sentido de viaje:
+              </div>
+              <form id="form-gtfs-trip" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+                <div class="form-field" style="flex: 1; min-width: 140px;">
+                  <label>Trip ID</label>
+                  <input type="text" id="trip-id" required placeholder="ej. IO33B_IDA_PATTERN" style="text-transform: uppercase;">
+                </div>
+                <div class="form-field" style="flex: 1; min-width: 120px;">
+                  <label>Ruta</label>
+                  <select id="trip-route-select"></select>
+                </div>
+                <div class="form-field" style="flex: 1; min-width: 120px;">
+                  <label>Sentido</label>
+                  <select id="trip-direction">
+                    <option value="0">0 - IDA</option>
+                    <option value="1">1 - VUELTA</option>
+                  </select>
+                </div>
+                <div class="form-field" style="flex: 1; min-width: 140px;">
+                  <label>Trazo Geométrico (Shape)</label>
+                  <select id="trip-shape-select"></select>
+                </div>
+                <div class="form-field" style="flex: 2; min-width: 180px;">
+                  <label>Destino en Letrero (Headsign)</label>
+                  <input type="text" id="trip-headsign" placeholder="ej. Hacia Villa El Salvador">
+                </div>
+                <button type="submit" class="btn btn-primary" style="height: 38px;">Guardar Viaje</button>
+              </form>
+
+              <div id="gtfs-trips-list" class="gtfs-items-container" style="margin-top: 1rem;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBPESTAÑA 3: FRECUENCIAS -->
+        <div class="gtfs-subtab-content" id="tab-gtfs-freqs">
+          <div class="testing-card" style="max-width: 900px; margin: 0 auto; width: 100%;">
+            <div class="card-heading">⏱️ Programación de Intervalos de Despacho (frequencies.txt)</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">
+              En Lima, el servicio opera por intervalos de frecuencia (headway) según la franja horaria:
+            </div>
+
+            <form id="form-gtfs-freq" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-top: 0.75rem;">
+              <div class="form-field" style="flex: 2; min-width: 180px;">
+                <label>Viaje / Sentido</label>
+                <select id="freq-trip-select"></select>
+              </div>
+              <div class="form-field" style="flex: 1; min-width: 110px;">
+                <label>Hora Inicio</label>
+                <input type="time" id="freq-start" value="06:00" required>
+              </div>
+              <div class="form-field" style="flex: 1; min-width: 110px;">
+                <label>Hora Fin</label>
+                <input type="time" id="freq-end" value="09:00" required>
+              </div>
+              <div class="form-field" style="flex: 1; min-width: 140px;">
+                <label>Intervalo (Minutos)</label>
+                <input type="number" id="freq-mins" value="4" min="1" max="60" required>
+              </div>
+              <button type="submit" class="btn btn-primary" style="height: 38px;">Añadir Intervalo</button>
+            </form>
+
+            <div class="fleet-table-wrapper" style="margin-top: 1.25rem;">
+              <table class="fleet-table">
+                <thead>
+                  <tr>
+                    <th>Trip ID</th>
+                    <th>Hora Inicio</th>
+                    <th>Hora Fin</th>
+                    <th>Frecuencia (Segundos)</th>
+                    <th>Intervalo Humano</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="gtfs-freq-table-body">
+                  <tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">Cargando frecuencias...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUBPESTAÑA 4: EXPORTAR ARCHIVOS GTFS -->
+        <div class="gtfs-subtab-content" id="tab-gtfs-export">
+          <div class="testing-card" style="max-width: 900px; margin: 0 auto; width: 100%;">
+            <div class="card-heading">📦 Exportar Especificación GTFS desde SQLite</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">
+              Descargue los archivos oficiales generados en tiempo real desde la base de datos:
+            </div>
+
+            <div class="gtfs-export-buttons-grid">
+              <a href="/api/gtfs/export/shapes.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="shapes.txt">
+                <span>📍 shapes.txt (Trazo)</span>
+                <span class="export-dl-icon">⬇️</span>
+              </a>
+              <a href="/api/gtfs/export/stops.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="stops.txt">
+                <span>🚏 stops.txt (Paraderos)</span>
+                <span class="export-dl-icon">⬇️</span>
+              </a>
+              <a href="/api/gtfs/export/routes.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="routes.txt">
+                <span>🚍 routes.txt (Rutas)</span>
+                <span class="export-dl-icon">⬇️</span>
+              </a>
+              <a href="/api/gtfs/export/trips.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="trips.txt">
+                <span>🔄 trips.txt (Viajes)</span>
+                <span class="export-dl-icon">⬇️</span>
+              </a>
+              <a href="/api/gtfs/export/frequencies.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="frequencies.txt">
+                <span>⏱️ frequencies.txt (Intervalos)</span>
+                <span class="export-dl-icon">⬇️</span>
+              </a>
+              <a href="/api/gtfs/export/agency.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="agency.txt">
+                <span>🏢 agency.txt (Empresa)</span>
+                <span class="export-dl-icon">⬇️</span>
+              </a>
+            </div>
+
+            <div style="margin-top: 1.5rem;">
+              <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.4rem;">
+                Previsualización en tiempo real del archivo GTFS generado:
+              </div>
+              <div class="trama-code-wrapper" style="max-height: 240px; overflow-y: auto;">
+                <pre class="trama-code" id="gtfs-preview-csv">Haga clic en cualquiera de los botones de arriba para previsualizar...</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 

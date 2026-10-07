@@ -12,6 +12,7 @@ const atuForwarder = require('./atu-forwarder');
 const tcpIngest = require('./ingest/tcp-ingest');
 const fleetStore = require('./fleet-store');
 const kpiEngine = require('./kpi-engine');
+const gtfsStore = require('./gtfs-store');
 
 // Mapa de Clientes SSE activos
 const sseClients = new Set();
@@ -384,6 +385,259 @@ const server = http.createServer((req, res) => {
       }
     });
     return;
+  }
+
+  // --- RUTAS DE GTFS (ESPECIFICACIÓN FRECUENCIAL / GEOMÉTRICA) ---
+
+  // A. Agency
+  if (method === 'GET' && pathname === '/api/gtfs/agency') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(gtfsStore.getAgency()));
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/agency') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = gtfsStore.saveAgency(json);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // B. Routes
+  if (method === 'GET' && pathname === '/api/gtfs/routes') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(gtfsStore.getRoutes()));
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/routes') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = gtfsStore.saveRoute(json);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/routes/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { route_id } = JSON.parse(body);
+        const result = gtfsStore.deleteRoute(route_id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // C. Stops
+  if (method === 'GET' && pathname === '/api/gtfs/stops') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(gtfsStore.getStops()));
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/stops') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = gtfsStore.saveStop(json);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/stops/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { stop_id } = JSON.parse(body);
+        const result = gtfsStore.deleteStop(stop_id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // D. Shapes
+  if (method === 'GET' && pathname === '/api/gtfs/shapes') {
+    const shapeId = parsedUrl.searchParams.get('shape_id');
+    if (shapeId) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(gtfsStore.getShapePoints(shapeId)));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(gtfsStore.getShapeList()));
+    }
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/shapes') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { shape_id, points } = JSON.parse(body);
+        const result = gtfsStore.saveShape(shape_id, points);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/shapes/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { shape_id } = JSON.parse(body);
+        const result = gtfsStore.deleteShape(shape_id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // E. Trips
+  if (method === 'GET' && pathname === '/api/gtfs/trips') {
+    const routeId = parsedUrl.searchParams.get('route_id');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(gtfsStore.getTrips(routeId)));
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/trips') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = gtfsStore.saveTrip(json);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/trips/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { trip_id } = JSON.parse(body);
+        const result = gtfsStore.deleteTrip(trip_id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // F. Frequencies
+  if (method === 'GET' && pathname === '/api/gtfs/frequencies') {
+    const tripId = parsedUrl.searchParams.get('trip_id');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(gtfsStore.getFrequencies(tripId)));
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/frequencies') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const result = gtfsStore.saveFrequency(json);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/frequencies/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { id } = JSON.parse(body);
+        const result = gtfsStore.deleteFrequency(id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  // G. Exportador de archivos CSV GTFS
+  if (method === 'GET' && pathname.startsWith('/api/gtfs/export/')) {
+    const filename = pathname.replace('/api/gtfs/export/', '');
+    const csvContent = gtfsStore.exportCsv(filename);
+    if (csvContent !== null) {
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`
+      });
+      res.end(csvContent);
+      return;
+    }
   }
 
   // --- SERVIDOR DE ARCHIVOS ESTÁTICOS (Vanilla Frontend) ---

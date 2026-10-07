@@ -524,6 +524,11 @@
         } else if (targetId === 'view-testing') {
           populateTestUnits();
           updateTestPreview();
+        } else if (targetId === 'view-gtfs') {
+          initGtfsDesigner();
+          setTimeout(() => {
+            if (gtfsMap) gtfsMap.invalidateSize();
+          }, 200);
         }
       }
     });
@@ -1070,6 +1075,891 @@
           <div>${err.message}</div>
         `;
       }
+    });
+  }
+
+  // =========================================================================
+  // --- MÓDULO DISEÑADOR GTFS EN MAPA LEAFLET & EXPORTADOR SQLITE ---
+  // =========================================================================
+
+  function calcHaversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  let gtfsMap = null;
+  let gtfsInitialized = false;
+  let gtfsCurrentMode = 'shapes'; // 'shapes' | 'stops'
+  let isDrawingShape = false;
+  let currentShapePoints = [];
+  let shapePolyline = null;
+  let shapeMarkersGroup = null;
+  let stopsLayerGroup = null;
+  let tempStopMarker = null;
+  let allStops = [];
+  let allRoutes = [];
+  let allShapes = [];
+  let allTrips = [];
+
+  function initGtfsDesigner() {
+    if (gtfsInitialized) return;
+    gtfsInitialized = true;
+
+    const mapContainer = document.getElementById('gtfs-map');
+    if (!mapContainer) return;
+
+    // Inicializar mapa de trazado Leaflet centrado en Lima
+    gtfsMap = L.map('gtfs-map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView(LIMA_COORDS, DEFAULT_ZOOM);
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(gtfsMap);
+
+    shapePolyline = L.polyline([], {
+      color: '#0284c7',
+      weight: 5,
+      opacity: 0.9,
+      lineJoin: 'round'
+    }).addTo(gtfsMap);
+
+    shapeMarkersGroup = L.layerGroup().addTo(gtfsMap);
+    stopsLayerGroup = L.layerGroup().addTo(gtfsMap);
+
+    // Evento de clic en mapa GTFS
+    gtfsMap.on('click', (e) => {
+      if (gtfsCurrentMode === 'shapes') {
+        if (!isDrawingShape) return;
+        const pt = {
+          lat: parseFloat(e.latlng.lat.toFixed(6)),
+          lon: parseFloat(e.latlng.lng.toFixed(6))
+        };
+        currentShapePoints.push(pt);
+        renderShapePolylineAndStats();
+      } else if (gtfsCurrentMode === 'stops') {
+        const lat = e.latlng.lat.toFixed(6);
+        const lon = e.latlng.lng.toFixed(6);
+        const elLat = document.getElementById('gtfs-stop-lat');
+        const elLon = document.getElementById('gtfs-stop-lon');
+        if (elLat) elLat.value = lat;
+        if (elLon) elLon.value = lon;
+
+        const stopIdInput = document.getElementById('gtfs-stop-id');
+        if (stopIdInput && !stopIdInput.value) {
+          stopIdInput.value = 'PAR_' + Math.floor(1000 + Math.random() * 9000);
+        }
+
+        if (tempStopMarker) {
+          tempStopMarker.setLatLng(e.latlng);
+        } else {
+          tempStopMarker = L.circleMarker(e.latlng, {
+            radius: 8,
+            color: '#ec4899',
+            fillColor: '#f43f5e',
+            fillOpacity: 0.9,
+            dashArray: '3, 3'
+          }).addTo(gtfsMap);
+        }
+      }
+    });
+
+    // Subpestañas GTFS
+    document.querySelectorAll('.gtfs-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.gtfs-subtab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.gtfs-subtab-content').forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        const targetId = btn.getAttribute('data-gtfs-tab');
+        const targetContent = document.getElementById(targetId);
+        if (targetContent) {
+          targetContent.classList.add('active');
+          if (targetId === 'tab-gtfs-map') {
+            setTimeout(() => { if (gtfsMap) gtfsMap.invalidateSize(); }, 150);
+          } else if (targetId === 'tab-gtfs-routes') {
+            loadRoutesAndTrips();
+          } else if (targetId === 'tab-gtfs-freqs') {
+            loadFrequencies();
+          }
+        }
+      });
+    });
+
+    // Selector de modo de trazado (Shapes vs Stops)
+    const btnModeShapes = document.getElementById('btn-mode-shapes');
+    const btnModeStops = document.getElementById('btn-mode-stops');
+    const panelShapes = document.getElementById('gtfs-shapes-panel');
+    const panelStops = document.getElementById('gtfs-stops-panel');
+
+    if (btnModeShapes && btnModeStops) {
+      btnModeShapes.addEventListener('click', () => {
+        gtfsCurrentMode = 'shapes';
+        btnModeShapes.classList.add('active');
+        btnModeStops.classList.remove('active');
+        if (panelShapes) panelShapes.style.display = 'block';
+        if (panelStops) panelStops.style.display = 'none';
+        if (tempStopMarker) {
+          gtfsMap.removeLayer(tempStopMarker);
+          tempStopMarker = null;
+        }
+      });
+
+      btnModeStops.addEventListener('click', () => {
+        gtfsCurrentMode = 'stops';
+        btnModeStops.classList.add('active');
+        btnModeShapes.classList.remove('active');
+        if (panelStops) panelStops.style.display = 'block';
+        if (panelShapes) panelShapes.style.display = 'none';
+        if (isDrawingShape) toggleDrawingMode();
+      });
+    }
+
+    // Botón Activar / Detener Dibujo
+    const btnToggleDraw = document.getElementById('btn-toggle-drawing');
+    if (btnToggleDraw) {
+      btnToggleDraw.addEventListener('click', toggleDrawingMode);
+    }
+
+    // Deshacer punto
+    const btnUndo = document.getElementById('btn-undo-point');
+    if (btnUndo) {
+      btnUndo.addEventListener('click', () => {
+        if (currentShapePoints.length > 0) {
+          currentShapePoints.pop();
+          renderShapePolylineAndStats();
+        }
+      });
+    }
+
+    // Limpiar trazo
+    const btnClear = document.getElementById('btn-clear-shape');
+    if (btnClear) {
+      btnClear.addEventListener('click', () => {
+        if (confirm('¿Desea limpiar los puntos del trazo actual?')) {
+          currentShapePoints = [];
+          renderShapePolylineAndStats();
+        }
+      });
+    }
+
+    // Guardar Trazo en SQLite
+    const btnSaveShape = document.getElementById('btn-save-shape-sql');
+    if (btnSaveShape) {
+      btnSaveShape.addEventListener('click', async () => {
+        const sel = document.getElementById('gtfs-shape-select');
+        const inputNew = document.getElementById('gtfs-shape-new-input');
+        let shapeId = sel ? sel.value : 'IO33B_IDA';
+        if (shapeId === 'NUEVO') {
+          shapeId = inputNew ? inputNew.value.trim().toUpperCase() : '';
+        }
+
+        if (!shapeId) {
+          alert('Por favor ingrese o seleccione un ID de trazo (ej. IO33B_IDA)');
+          return;
+        }
+
+        if (currentShapePoints.length === 0) {
+          alert('El trazo debe contener al menos 1 punto geográfico para guardarse.');
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/gtfs/shapes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shape_id: shapeId, points: currentShapePoints })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos.`);
+            await loadShapeList(shapeId);
+          } else {
+            alert(`❌ Error al guardar trazo: ${data.error}`);
+          }
+        } catch (e) {
+          alert(`❌ Error de conexión: ${e.message}`);
+        }
+      });
+    }
+
+    // Cambio en selector de trazo
+    const shapeSelect = document.getElementById('gtfs-shape-select');
+    const shapeNewInput = document.getElementById('gtfs-shape-new-input');
+    if (shapeSelect) {
+      shapeSelect.addEventListener('change', async () => {
+        if (shapeSelect.value === 'NUEVO') {
+          if (shapeNewInput) {
+            shapeNewInput.style.display = 'block';
+            shapeNewInput.value = '';
+            shapeNewInput.focus();
+          }
+          currentShapePoints = [];
+          renderShapePolylineAndStats();
+        } else {
+          if (shapeNewInput) shapeNewInput.style.display = 'none';
+          await loadSelectedShape(shapeSelect.value);
+        }
+      });
+    }
+
+    // Guardar Paradero en SQLite
+    const btnSaveStop = document.getElementById('btn-save-stop-sql');
+    if (btnSaveStop) {
+      btnSaveStop.addEventListener('click', async () => {
+        const stopId = document.getElementById('gtfs-stop-id')?.value.trim().toUpperCase();
+        const stopName = document.getElementById('gtfs-stop-name')?.value.trim();
+        const stopType = parseInt(document.getElementById('gtfs-stop-type')?.value || '0', 10);
+        const stopLat = parseFloat(document.getElementById('gtfs-stop-lat')?.value);
+        const stopLon = parseFloat(document.getElementById('gtfs-stop-lon')?.value);
+
+        if (!stopId || !stopName || isNaN(stopLat) || isNaN(stopLon)) {
+          alert('Haga clic en el mapa para fijar coordenadas y complete el ID y nombre del paradero.');
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/gtfs/stops', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stop_id: stopId,
+              stop_name: stopName,
+              stop_lat: stopLat,
+              stop_lon: stopLon,
+              location_type: stopType
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            if (tempStopMarker) {
+              gtfsMap.removeLayer(tempStopMarker);
+              tempStopMarker = null;
+            }
+            if (document.getElementById('gtfs-stop-id')) document.getElementById('gtfs-stop-id').value = '';
+            if (document.getElementById('gtfs-stop-name')) document.getElementById('gtfs-stop-name').value = '';
+            if (document.getElementById('gtfs-stop-lat')) document.getElementById('gtfs-stop-lat').value = '';
+            if (document.getElementById('gtfs-stop-lon')) document.getElementById('gtfs-stop-lon').value = '';
+            await loadStops();
+          } else {
+            alert(`❌ Error al guardar paradero: ${data.error}`);
+          }
+        } catch (e) {
+          alert(`❌ Error de comunicación: ${e.message}`);
+        }
+      });
+    }
+
+    // Formularios de Empresa, Rutas, Viajes, Frecuencias y Exportador
+    setupAgencyForm();
+    setupRouteForm();
+    setupTripForm();
+    setupFrequencyForm();
+    setupExportHandlers();
+
+    // Cargar datos iniciales
+    loadShapeList('IO33B_IDA');
+    loadStops();
+  }
+
+  function toggleDrawingMode() {
+    isDrawingShape = !isDrawingShape;
+    const btnToggleDraw = document.getElementById('btn-toggle-drawing');
+    const icon = document.getElementById('btn-drawing-icon');
+    const text = document.getElementById('btn-drawing-text');
+
+    if (isDrawingShape) {
+      if (icon) icon.textContent = '🛑';
+      if (text) text.textContent = 'Detener Dibujo (Haga Clics en Mapa)';
+      if (btnToggleDraw) {
+        btnToggleDraw.style.background = '#dc2626';
+        btnToggleDraw.style.borderColor = '#b91c1c';
+      }
+    } else {
+      if (icon) icon.textContent = '✏️';
+      if (text) text.textContent = 'Activar Dibujo en Mapa';
+      if (btnToggleDraw) {
+        btnToggleDraw.style.background = '';
+        btnToggleDraw.style.borderColor = '';
+      }
+    }
+  }
+
+  function renderShapePolylineAndStats() {
+    if (!shapePolyline) return;
+    const latLngs = currentShapePoints.map(p => [p.lat, p.lon]);
+    shapePolyline.setLatLngs(latLngs);
+
+    if (shapeMarkersGroup) {
+      shapeMarkersGroup.clearLayers();
+      currentShapePoints.forEach((pt, index) => {
+        const isStart = index === 0;
+        const isEnd = index === currentShapePoints.length - 1 && currentShapePoints.length > 1;
+
+        const radius = isStart || isEnd ? 6 : 3;
+        const color = isStart ? '#10b981' : (isEnd ? '#ef4444' : '#38bdf8');
+
+        L.circleMarker([pt.lat, pt.lon], {
+          radius: radius,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.9,
+          weight: 1
+        }).bindTooltip(`Punto #${index + 1}<br>Lat: ${pt.lat}<br>Lon: ${pt.lon}`, { direction: 'top' })
+          .addTo(shapeMarkersGroup);
+      });
+    }
+
+    // Calcular distancia Haversine
+    let distKm = 0;
+    for (let i = 0; i < currentShapePoints.length - 1; i++) {
+      distKm += calcHaversineKm(
+        currentShapePoints[i].lat, currentShapePoints[i].lon,
+        currentShapePoints[i + 1].lat, currentShapePoints[i + 1].lon
+      );
+    }
+
+    const ptsCount = document.getElementById('gtfs-pts-count');
+    const distEl = document.getElementById('gtfs-dist-km');
+    if (ptsCount) ptsCount.textContent = currentShapePoints.length;
+    if (distEl) distEl.textContent = `${distKm.toFixed(2)} km`;
+  }
+
+  async function loadShapeList(selectIdToSet = null) {
+    try {
+      const res = await fetch('/api/gtfs/shapes');
+      const list = await res.json();
+      allShapes = list;
+
+      const sel = document.getElementById('gtfs-shape-select');
+      const tripShapeSel = document.getElementById('trip-shape-select');
+
+      if (sel) {
+        sel.innerHTML = '';
+        list.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.shape_id;
+          opt.textContent = `${s.shape_id} (${s.total_puntos} pts)`;
+          sel.appendChild(opt);
+        });
+
+        const optNew = document.createElement('option');
+        optNew.value = 'NUEVO';
+        optNew.textContent = '+ Crear Nuevo Trazo...';
+        sel.appendChild(optNew);
+
+        if (selectIdToSet && list.some(s => s.shape_id === selectIdToSet)) {
+          sel.value = selectIdToSet;
+        } else if (list.length > 0) {
+          sel.value = list[0].shape_id;
+        }
+      }
+
+      if (tripShapeSel) {
+        tripShapeSel.innerHTML = '<option value="">-- Sin trazo asignado --</option>';
+        list.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.shape_id;
+          opt.textContent = s.shape_id;
+          tripShapeSel.appendChild(opt);
+        });
+      }
+
+      if (sel && sel.value && sel.value !== 'NUEVO') {
+        await loadSelectedShape(sel.value);
+      }
+    } catch (e) {
+      console.error('[GTFS] Error cargando lista de trazos:', e);
+    }
+  }
+
+  async function loadSelectedShape(shapeId) {
+    try {
+      const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(shapeId)}`);
+      const points = await res.json();
+      currentShapePoints = points.map(p => ({
+        lat: p.shape_pt_lat,
+        lon: p.shape_pt_lon
+      }));
+      renderShapePolylineAndStats();
+      if (currentShapePoints.length > 0 && gtfsMap && shapePolyline) {
+        const bounds = shapePolyline.getBounds();
+        if (bounds.isValid()) {
+          gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+        }
+      }
+    } catch (e) {
+      console.error('[GTFS] Error cargando trazo:', e);
+    }
+  }
+
+  async function loadStops() {
+    try {
+      const res = await fetch('/api/gtfs/stops');
+      const stops = await res.json();
+      allStops = stops;
+
+      const countEl = document.getElementById('gtfs-stops-count');
+      if (countEl) countEl.textContent = stops.length;
+
+      // Renderizar en mapa
+      if (stopsLayerGroup) {
+        stopsLayerGroup.clearLayers();
+        stops.forEach(s => {
+          const isTerminal = s.location_type === 1;
+          const markerColor = isTerminal ? '#f59e0b' : '#0ea5e9';
+          const markerFill = isTerminal ? '#d97706' : '#0284c7';
+          const radius = isTerminal ? 8 : 6;
+          const label = isTerminal ? '🏁 TERMINAL' : '🚏 PARADERO';
+
+          const marker = L.circleMarker([s.stop_lat, s.stop_lon], {
+            radius: radius,
+            color: markerColor,
+            fillColor: markerFill,
+            fillOpacity: 0.9,
+            weight: 2
+          }).addTo(stopsLayerGroup);
+
+          marker.bindPopup(`
+            <div style="font-family: var(--font-sans); font-size: 0.8rem;">
+              <div style="font-weight: 700; color: #fff; margin-bottom: 2px;">${label}</div>
+              <div style="font-size: 0.85rem; color: #38bdf8; font-weight: 600;">${s.stop_name}</div>
+              <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">ID: <code>${s.stop_id}</code></div>
+              <div style="font-size: 0.7rem; color: var(--text-dim);">Lat: ${s.stop_lat}, Lon: ${s.stop_lon}</div>
+            </div>
+          `);
+        });
+      }
+
+      // Renderizar mini lista
+      const listEl = document.getElementById('gtfs-stops-list');
+      if (listEl) {
+        if (stops.length === 0) {
+          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay paraderos registrados aún.</div>';
+          return;
+        }
+
+        listEl.innerHTML = stops.map(s => {
+          const isTerminal = s.location_type === 1;
+          const badgeClass = isTerminal ? 'badge-warn' : 'badge-ok';
+          const badgeText = isTerminal ? 'Terminal' : 'Paradero';
+          return `
+            <div class="gtfs-stop-item" data-stop-id="${s.stop_id}">
+              <div style="cursor: pointer; flex: 1; overflow: hidden;" onclick="window.focusGtfsStop(${s.stop_lat}, ${s.stop_lon})">
+                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span class="kpi-badge ${badgeClass}" style="font-size: 0.65rem; padding: 1px 4px;">${badgeText}</span>
+                  <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f8fafc;">${s.stop_name}</strong>
+                </div>
+                <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">
+                  <code>${s.stop_id}</code> | ${s.stop_lat.toFixed(4)}, ${s.stop_lon.toFixed(4)}
+                </div>
+              </div>
+              <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsStop('${s.stop_id}')" title="Eliminar Paradero">
+                🗑️
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+    } catch (e) {
+      console.error('[GTFS] Error cargando paraderos:', e);
+    }
+  }
+
+  window.focusGtfsStop = function(lat, lon) {
+    if (gtfsMap) {
+      gtfsMap.setView([lat, lon], 16);
+    }
+  };
+
+  window.deleteGtfsStop = async function(stopId) {
+    if (!confirm(`¿Desea eliminar el paradero "${stopId}" de SQLite?`)) return;
+    try {
+      const res = await fetch('/api/gtfs/stops/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stop_id: stopId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadStops();
+      } else {
+        alert(`❌ Error al eliminar: ${data.error}`);
+      }
+    } catch (e) {
+      alert(`❌ Error de conexión: ${e.message}`);
+    }
+  };
+
+  // --- AGENCY ---
+  async function setupAgencyForm() {
+    const form = document.getElementById('form-gtfs-agency');
+    if (!form) return;
+
+    try {
+      const res = await fetch('/api/gtfs/agency');
+      const a = await res.json();
+      if (a) {
+        if (document.getElementById('agency-id')) document.getElementById('agency-id').value = a.agency_id || 'EMP_LIMA';
+        if (document.getElementById('agency-name')) document.getElementById('agency-name').value = a.agency_name || '';
+        if (document.getElementById('agency-url')) document.getElementById('agency-url').value = a.agency_url || '';
+        if (document.getElementById('agency-tz')) document.getElementById('agency-tz').value = a.agency_timezone || 'America/Lima';
+      }
+    } catch (e) {}
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        agency_id: document.getElementById('agency-id')?.value.trim() || 'EMP_LIMA',
+        agency_name: document.getElementById('agency-name')?.value.trim(),
+        agency_url: document.getElementById('agency-url')?.value.trim(),
+        agency_timezone: document.getElementById('agency-tz')?.value.trim() || 'America/Lima'
+      };
+      try {
+        const res = await fetch('/api/gtfs/agency', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) alert('✅ Datos de empresa (agency.txt) actualizados en SQLite.');
+        else alert(`❌ Error: ${data.error}`);
+      } catch (err) {
+        alert(`❌ Error de conexión: ${err.message}`);
+      }
+    });
+  }
+
+  // --- ROUTES & TRIPS ---
+  async function loadRoutesAndTrips() {
+    await loadRoutes();
+    await loadTrips();
+  }
+
+  async function loadRoutes() {
+    try {
+      const res = await fetch('/api/gtfs/routes');
+      const routes = await res.json();
+      allRoutes = routes;
+
+      // Actualizar select en Trips
+      const tripRouteSel = document.getElementById('trip-route-select');
+      if (tripRouteSel) {
+        tripRouteSel.innerHTML = routes.map(r => `<option value="${r.route_id}">${r.route_short_name} - ${r.route_long_name || ''}</option>`).join('');
+      }
+
+      // Actualizar lista en pantalla
+      const listEl = document.getElementById('gtfs-routes-list');
+      if (listEl) {
+        if (routes.length === 0) {
+          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay rutas registradas.</div>';
+          return;
+        }
+
+        listEl.innerHTML = routes.map(r => `
+          <div class="gtfs-pill-item">
+            <div>
+              <strong style="color: #38bdf8;">${r.route_short_name}</strong>
+              <span style="font-size: 0.72rem; color: var(--text-muted); margin-left: 6px;">${r.route_long_name || 'Sin itinerario'}</span>
+            </div>
+            <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsRoute('${r.route_id}')" title="Eliminar Ruta">
+              🗑️
+            </button>
+          </div>
+        `).join('');
+      }
+    } catch (e) {
+      console.error('[GTFS] Error cargando rutas:', e);
+    }
+  }
+
+  function setupRouteForm() {
+    const form = document.getElementById('form-gtfs-route');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const shortName = document.getElementById('route-short-name')?.value.trim().toUpperCase();
+      const longName = document.getElementById('route-long-name')?.value.trim();
+      const routeType = parseInt(document.getElementById('route-type')?.value || '3', 10);
+      const agencyId = document.getElementById('agency-id')?.value.trim() || 'EMP_LIMA';
+
+      if (!shortName) return;
+
+      try {
+        const res = await fetch('/api/gtfs/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            route_id: shortName,
+            agency_id: agencyId,
+            route_short_name: shortName,
+            route_long_name: longName,
+            route_type: routeType
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (document.getElementById('route-short-name')) document.getElementById('route-short-name').value = '';
+          if (document.getElementById('route-long-name')) document.getElementById('route-long-name').value = '';
+          await loadRoutes();
+        } else {
+          alert(`❌ Error al registrar ruta: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`❌ Error de conexión: ${err.message}`);
+      }
+    });
+  }
+
+  window.deleteGtfsRoute = async function(routeId) {
+    if (!confirm(`¿Desea eliminar la ruta "${routeId}"?`)) return;
+    try {
+      const res = await fetch('/api/gtfs/routes/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route_id: routeId })
+      });
+      const data = await res.json();
+      if (data.success) await loadRoutes();
+      else alert(`❌ Error: ${data.error}`);
+    } catch (e) {
+      alert(`❌ Error de conexión: ${e.message}`);
+    }
+  };
+
+  // --- TRIPS ---
+  async function loadTrips() {
+    try {
+      const res = await fetch('/api/gtfs/trips');
+      const trips = await res.json();
+      allTrips = trips;
+
+      // Actualizar select de Trips en Frecuencias
+      const freqTripSel = document.getElementById('freq-trip-select');
+      if (freqTripSel) {
+        freqTripSel.innerHTML = trips.map(t => {
+          const dir = t.direction_id === 0 ? 'IDA' : 'VUELTA';
+          return `<option value="${t.trip_id}">[${t.route_id}] ${t.trip_id} (${dir})</option>`;
+        }).join('');
+      }
+
+      // Actualizar lista en pantalla
+      const listEl = document.getElementById('gtfs-trips-list');
+      if (listEl) {
+        if (trips.length === 0) {
+          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay viajes registrados.</div>';
+          return;
+        }
+
+        listEl.innerHTML = trips.map(t => {
+          const dirLabel = t.direction_id === 0 ? 'Sentido: IDA (0)' : 'Sentido: VUELTA (1)';
+          return `
+            <div class="gtfs-pill-item">
+              <div>
+                <strong style="color: #38bdf8;">${t.trip_id}</strong>
+                <span class="bus-ruta-badge" style="margin-left: 6px;">${t.route_id}</span>
+                <span style="font-size: 0.72rem; color: var(--text-muted); margin-left: 6px;">${dirLabel}</span>
+                <span style="font-size: 0.72rem; color: #34d399; margin-left: 6px;">Shape: ${t.shape_id || 'S/T'}</span>
+                ${t.trip_headsign ? `<span style="font-size: 0.72rem; color: var(--text-dim); margin-left: 6px;">[${t.trip_headsign}]</span>` : ''}
+              </div>
+              <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsTrip('${t.trip_id}')" title="Eliminar Viaje">
+                🗑️
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+    } catch (e) {
+      console.error('[GTFS] Error cargando viajes:', e);
+    }
+  }
+
+  function setupTripForm() {
+    const form = document.getElementById('form-gtfs-trip');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const tripId = document.getElementById('trip-id')?.value.trim().toUpperCase();
+      const routeId = document.getElementById('trip-route-select')?.value;
+      const dirId = parseInt(document.getElementById('trip-direction')?.value || '0', 10);
+      const shapeId = document.getElementById('trip-shape-select')?.value;
+      const headsign = document.getElementById('trip-headsign')?.value.trim();
+
+      if (!tripId || !routeId) return;
+
+      try {
+        const res = await fetch('/api/gtfs/trips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trip_id: tripId,
+            route_id: routeId,
+            direction_id: dirId,
+            shape_id: shapeId,
+            trip_headsign: headsign
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (document.getElementById('trip-id')) document.getElementById('trip-id').value = '';
+          if (document.getElementById('trip-headsign')) document.getElementById('trip-headsign').value = '';
+          await loadTrips();
+        } else {
+          alert(`❌ Error al registrar viaje: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`❌ Error de conexión: ${err.message}`);
+      }
+    });
+  }
+
+  window.deleteGtfsTrip = async function(tripId) {
+    if (!confirm(`¿Desea eliminar el viaje "${tripId}"?`)) return;
+    try {
+      const res = await fetch('/api/gtfs/trips/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trip_id: tripId })
+      });
+      const data = await res.json();
+      if (data.success) await loadTrips();
+      else alert(`❌ Error: ${data.error}`);
+    } catch (e) {
+      alert(`❌ Error de conexión: ${e.message}`);
+    }
+  };
+
+  // --- FREQUENCIES ---
+  async function loadFrequencies() {
+    if (allTrips.length === 0) await loadTrips();
+
+    try {
+      const res = await fetch('/api/gtfs/frequencies');
+      const freqs = await res.json();
+
+      const tbody = document.getElementById('gtfs-freq-table-body');
+      if (!tbody) return;
+
+      if (freqs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">No hay intervalos programados aún.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = freqs.map(f => {
+        const mins = Math.round(f.headway_secs / 60);
+        return `
+          <tr>
+            <td><strong style="color: #38bdf8;">${f.trip_id}</strong></td>
+            <td>${f.start_time}</td>
+            <td>${f.end_time}</td>
+            <td>${f.headway_secs} s</td>
+            <td><span class="badge-gps-ok">Cada ${mins} min</span></td>
+            <td>
+              <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsFrequency(${f.id})" title="Eliminar Intervalo">
+                🗑️ Eliminar
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (e) {
+      console.error('[GTFS] Error cargando frecuencias:', e);
+    }
+  }
+
+  function setupFrequencyForm() {
+    const form = document.getElementById('form-gtfs-freq');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const tripId = document.getElementById('freq-trip-select')?.value;
+      const startTime = document.getElementById('freq-start')?.value;
+      const endTime = document.getElementById('freq-end')?.value;
+      const mins = parseInt(document.getElementById('freq-mins')?.value || '5', 10);
+
+      if (!tripId || !startTime || !endTime) {
+        alert('Complete todos los campos del intervalo.');
+        return;
+      }
+
+      const headwaySecs = mins * 60;
+      const formattedStart = startTime.length === 5 ? `${startTime}:00` : startTime;
+      const formattedEnd = endTime.length === 5 ? `${endTime}:00` : endTime;
+
+      try {
+        const res = await fetch('/api/gtfs/frequencies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trip_id: tripId,
+            start_time: formattedStart,
+            end_time: formattedEnd,
+            headway_secs: headwaySecs
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          await loadFrequencies();
+        } else {
+          alert(`❌ Error al guardar frecuencia: ${data.error}`);
+        }
+      } catch (err) {
+        alert(`❌ Error de conexión: ${err.message}`);
+      }
+    });
+  }
+
+  window.deleteGtfsFrequency = async function(id) {
+    if (!confirm('¿Desea eliminar este intervalo de frecuencia?')) return;
+    try {
+      const res = await fetch('/api/gtfs/frequencies/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      const data = await res.json();
+      if (data.success) await loadFrequencies();
+      else alert(`❌ Error: ${data.error}`);
+    } catch (e) {
+      alert(`❌ Error de conexión: ${e.message}`);
+    }
+  };
+
+  // --- EXPORTADORES & PREVISUALIZADOR CSV ---
+  function setupExportHandlers() {
+    document.querySelectorAll('.gtfs-export-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const filename = btn.getAttribute('data-export-file');
+        if (!filename) return;
+
+        const previewBox = document.getElementById('gtfs-preview-csv');
+        if (previewBox) {
+          previewBox.textContent = `⏳ Generando previsualización de ${filename} desde SQLite...`;
+        }
+
+        try {
+          const res = await fetch(`/api/gtfs/export/${filename}`);
+          const text = await res.text();
+          if (previewBox) {
+            previewBox.textContent = text;
+          }
+        } catch (err) {
+          if (previewBox) {
+            previewBox.textContent = `Error previsualizando ${filename}: ${err.message}`;
+          }
+        }
+      });
     });
   }
 

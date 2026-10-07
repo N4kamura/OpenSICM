@@ -69,6 +69,57 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_kpi_alerts_fecha 
   ON kpi_alerts (fecha, timestamp DESC);
+
+  /* --- TABLAS DEL ESTÁNDAR GTFS FRECUENCIAL / GEOMÉTRICO --- */
+  CREATE TABLE IF NOT EXISTS gtfs_agency (
+    agency_id TEXT PRIMARY KEY,
+    agency_name TEXT NOT NULL,
+    agency_url TEXT,
+    agency_timezone TEXT DEFAULT 'America/Lima'
+  );
+
+  CREATE TABLE IF NOT EXISTS gtfs_routes (
+    route_id TEXT PRIMARY KEY,
+    agency_id TEXT,
+    route_short_name TEXT NOT NULL,
+    route_long_name TEXT,
+    route_type INTEGER DEFAULT 3
+  );
+
+  CREATE TABLE IF NOT EXISTS gtfs_shapes (
+    shape_id TEXT NOT NULL,
+    shape_pt_lat REAL NOT NULL,
+    shape_pt_lon REAL NOT NULL,
+    shape_pt_sequence INTEGER NOT NULL,
+    PRIMARY KEY (shape_id, shape_pt_sequence)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_gtfs_shapes_seq 
+  ON gtfs_shapes (shape_id, shape_pt_sequence);
+
+  CREATE TABLE IF NOT EXISTS gtfs_stops (
+    stop_id TEXT PRIMARY KEY,
+    stop_name TEXT NOT NULL,
+    stop_lat REAL NOT NULL,
+    stop_lon REAL NOT NULL,
+    location_type INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS gtfs_trips (
+    trip_id TEXT PRIMARY KEY,
+    route_id TEXT NOT NULL,
+    shape_id TEXT,
+    direction_id INTEGER DEFAULT 0,
+    trip_headsign TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS gtfs_frequencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    headway_secs INTEGER NOT NULL
+  );
 `);
 
 module.exports = db;
