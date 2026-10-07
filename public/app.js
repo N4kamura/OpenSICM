@@ -741,8 +741,14 @@
 
   async function loadFleet() {
     try {
-      const res = await fetch('/api/fleet');
-      const data = await res.json();
+      const [fleetRes, routesRes] = await Promise.all([
+        fetch('/api/fleet'),
+        fetch('/api/gtfs/routes').catch(() => null)
+      ]);
+      const data = await fleetRes.json();
+      if (routesRes && routesRes.ok) {
+        allRoutes = await routesRes.json();
+      }
       fleetData = data.units || [];
 
       if (fStatTotal) fStatTotal.textContent = data.stats?.total || fleetData.length;
@@ -754,6 +760,49 @@
       console.error('Error cargando flota:', err);
     }
   }
+
+  function renderRouteOptions(currentRuta) {
+    const routes = allRoutes && allRoutes.length > 0 ? allRoutes : [{ route_short_name: 'IO33B' }, { route_short_name: 'CR42' }];
+    let opts = '';
+    let found = false;
+    routes.forEach(r => {
+      const code = r.route_short_name || r.route_id;
+      const isSel = code === currentRuta;
+      if (isSel) found = true;
+      opts += `<option value="${code}" ${isSel ? 'selected' : ''}>${code}</option>`;
+    });
+    if (!found && currentRuta && currentRuta !== 'S/R') {
+      opts = `<option value="${currentRuta}" selected>${currentRuta}</option>` + opts;
+    }
+    return opts;
+  }
+
+  window.quickAssignRoute = async function (placa, newRuta) {
+    if (!placa || !newRuta) return;
+    try {
+      const res = await fetch('/api/fleet/assign-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ placa, ruta: newRuta })
+      });
+      const data = await res.json();
+      if (data.status === 'OK') {
+        const u = fleetData.find(item => item.placa === placa);
+        if (u) u.ruta = newRuta;
+        const bus = state.buses.get(placa);
+        if (bus) {
+          bus.ruta = newRuta;
+          updateMapMarker(bus);
+        }
+      } else {
+        alert(`Error al asignar ruta: ${data.error || 'No se pudo actualizar'}`);
+        loadFleet();
+      }
+    } catch (err) {
+      alert('Error de conexión al asignar ruta.');
+      loadFleet();
+    }
+  };
 
   function renderFleetTable() {
     if (!fleetTableBody) return;
@@ -792,15 +841,19 @@
       html += `
         <tr>
           <td><strong style="font-family: monospace; font-size: 0.95rem; color: #fff;">${u.placa}</strong></td>
-          <td><span class="bus-ruta-badge">${u.ruta || 'S/R'}</span></td>
+          <td>
+            <select class="fleet-route-select" onchange="window.quickAssignRoute('${u.placa}', this.value)" title="Cambiar ruta asignada con un clic">
+              ${renderRouteOptions(u.ruta)}
+            </select>
+          </td>
           <td>${u.padron || '-'}</td>
           <td>${gpsBadge}</td>
           <td>${u.modeloGps || '<span style="color: var(--text-dim);">No asignado</span>'}</td>
           <td style="font-family: monospace; color: ${u.imei ? '#38bdf8' : 'var(--text-dim)'};">${u.imei || 'Sin módem'}</td>
           <td>
             <div style="display: flex; gap: 0.35rem;">
-              <button class="tbl-action-btn" onclick="window.editUnit('${u.placa}')" title="Asignar o editar GPS">
-                🔧 Asignar GPS
+              <button class="tbl-action-btn" onclick="window.editUnit('${u.placa}')" title="Editar ruta, padrón y GPS">
+                ✏️ Editar / GPS
               </button>
               <button class="tbl-action-btn" onclick="window.testUnitTrama('${u.placa}')" title="Probar transmisión ATU">
                 🧪 Probar
@@ -839,10 +892,32 @@
     if (!modalUnit) return;
     unitFormError.style.display = 'none';
 
-    document.getElementById('unit-modal-title').textContent = unit ? `🔧 Asignar GPS a Unidad [${unit.placa}]` : '➕ Registrar Unidad / Asignar GPS';
+    document.getElementById('unit-modal-title').textContent = unit ? `✏️ Asignar Ruta y GPS [${unit.placa}]` : '➕ Registrar Unidad / Asignar Ruta';
     document.getElementById('unit-form-placa').value = unit ? unit.placa : '';
     document.getElementById('unit-form-placa').readOnly = !!unit;
-    document.getElementById('unit-form-ruta').value = unit ? unit.ruta : 'IO33B';
+
+    // Poblar selector de rutas GTFS en el modal
+    const rutaSelect = document.getElementById('unit-form-ruta-select');
+    const rutaInput = document.getElementById('unit-form-ruta');
+    const currentRuta = unit ? unit.ruta : (allRoutes[0]?.route_short_name || 'IO33B');
+
+    if (rutaSelect) {
+      const routes = allRoutes && allRoutes.length > 0 ? allRoutes : [{ route_short_name: 'IO33B' }, { route_short_name: 'CR42' }];
+      let selectHtml = '<option value="">-- Seleccionar de Rutas GTFS --</option>';
+      routes.forEach(r => {
+        const code = r.route_short_name || r.route_id;
+        const sel = code === currentRuta ? 'selected' : '';
+        selectHtml += `<option value="${code}" ${sel}>${code} - ${r.route_long_name || ''}</option>`;
+      });
+      rutaSelect.innerHTML = selectHtml;
+      rutaSelect.onchange = () => {
+        if (rutaSelect.value && rutaInput) {
+          rutaInput.value = rutaSelect.value;
+        }
+      };
+    }
+
+    if (rutaInput) rutaInput.value = currentRuta;
     document.getElementById('unit-form-padron').value = unit ? (unit.padron || '') : '';
     document.getElementById('unit-form-imei').value = unit ? (unit.imei || '') : '';
     document.getElementById('unit-form-modelo').value = unit ? (unit.modeloGps || 'TELTONIKA_FMB920') : 'TELTONIKA_FMB920';
@@ -1099,6 +1174,10 @@
   let isDrawingShape = false;
   let currentShapePoints = [];
   let shapePolyline = null;
+  let referenceShapePolyline = null;
+  let currentShapeDir = 0; // 0 = IDA, 1 = VUELTA
+  let setShapeDirection = null;
+  let updateReferenceShape = null;
   let shapeMarkersGroup = null;
   let stopsLayerGroup = null;
   let tempStopMarker = null;
@@ -1130,6 +1209,13 @@
       weight: 5,
       opacity: 0.9,
       lineJoin: 'round'
+    }).addTo(gtfsMap);
+
+    referenceShapePolyline = L.polyline([], {
+      color: '#0284c7',
+      weight: 3,
+      opacity: 0.45,
+      dashArray: '6, 8'
     }).addTo(gtfsMap);
 
     shapeMarkersGroup = L.layerGroup().addTo(gtfsMap);
@@ -1247,6 +1333,123 @@
         if (confirm('¿Desea limpiar los puntos del trazo actual?')) {
           currentShapePoints = [];
           renderShapePolylineAndStats();
+        }
+      });
+    }
+
+    // --- Sentido del Trazo (IDA vs VUELTA) y Herramientas Inteligentes ---
+    currentShapeDir = 0; // 0 = IDA, 1 = VUELTA
+    const btnShapeDir0 = document.getElementById('btn-shape-dir-0');
+    const btnShapeDir1 = document.getElementById('btn-shape-dir-1');
+    const btnCopyInvert = document.getElementById('btn-copy-invert-shape');
+    const chkShowRef = document.getElementById('chk-show-reference-shape');
+
+    updateReferenceShape = async function() {
+      if (!referenceShapePolyline) return;
+      if (!chkShowRef || !chkShowRef.checked) {
+        referenceShapePolyline.setLatLngs([]);
+        return;
+      }
+
+      const sel = document.getElementById('gtfs-shape-select');
+      const inputNew = document.getElementById('gtfs-shape-new-input');
+      let curId = sel ? sel.value : '';
+      if (curId === 'NUEVO' && inputNew) curId = inputNew.value.trim().toUpperCase();
+
+      let targetRefId = '';
+      if (currentShapeDir === 1) {
+        targetRefId = curId.replace(/_VUELTA$/, '_IDA').replace(/_VTA$/, '_IDA');
+        if (!targetRefId || targetRefId === curId) targetRefId = 'IO33B_IDA';
+        referenceShapePolyline.setStyle({ color: '#0284c7' });
+      } else {
+        targetRefId = curId.replace(/_IDA$/, '_VUELTA');
+        if (!targetRefId || targetRefId === curId) targetRefId = 'IO33B_VUELTA';
+        referenceShapePolyline.setStyle({ color: '#8b5cf6' });
+      }
+
+      try {
+        const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(targetRefId)}`);
+        const pts = await res.json();
+        if (Array.isArray(pts) && pts.length > 0) {
+          referenceShapePolyline.setLatLngs(pts.map(p => [p.shape_pt_lat, p.shape_pt_lon]));
+        } else {
+          referenceShapePolyline.setLatLngs([]);
+        }
+      } catch (e) {
+        referenceShapePolyline.setLatLngs([]);
+      }
+    };
+
+    setShapeDirection = function(dir) {
+      currentShapeDir = dir;
+      if (btnShapeDir0) btnShapeDir0.classList.toggle('active', dir === 0);
+      if (btnShapeDir1) btnShapeDir1.classList.toggle('active', dir === 1);
+
+      if (shapePolyline) {
+        shapePolyline.setStyle({ color: dir === 0 ? '#0284c7' : '#8b5cf6' });
+      }
+
+      if (btnCopyInvert) {
+        btnCopyInvert.style.display = dir === 1 ? 'flex' : 'none';
+      }
+
+      const sel = document.getElementById('gtfs-shape-select');
+      const inputNew = document.getElementById('gtfs-shape-new-input');
+      if (sel && sel.value === 'NUEVO' && inputNew) {
+        let val = inputNew.value.trim().toUpperCase();
+        if (!val) {
+          const firstRoute = allRoutes[0]?.route_short_name || 'IO33B';
+          inputNew.value = dir === 0 ? `${firstRoute}_IDA` : `${firstRoute}_VUELTA`;
+        } else if (val.endsWith('_IDA') && dir === 1) {
+          inputNew.value = val.replace(/_IDA$/, '_VUELTA');
+        } else if (val.endsWith('_VUELTA') && dir === 0) {
+          inputNew.value = val.replace(/_VUELTA$/, '_IDA');
+        }
+      }
+
+      updateReferenceShape();
+    };
+
+    if (btnShapeDir0) btnShapeDir0.addEventListener('click', () => setShapeDirection(0));
+    if (btnShapeDir1) btnShapeDir1.addEventListener('click', () => setShapeDirection(1));
+    if (chkShowRef) chkShowRef.addEventListener('change', () => updateReferenceShape());
+
+    if (btnCopyInvert) {
+      btnCopyInvert.addEventListener('click', async () => {
+        const sel = document.getElementById('gtfs-shape-select');
+        const inputNew = document.getElementById('gtfs-shape-new-input');
+        let curId = sel ? sel.value : '';
+        if (curId === 'NUEVO' && inputNew) curId = inputNew.value.trim().toUpperCase();
+
+        let baseId = curId.replace(/_VUELTA$/, '').replace(/_VTA$/, '').replace(/_IDA$/, '');
+        let targetIda = baseId ? `${baseId}_IDA` : 'IO33B_IDA';
+
+        try {
+          const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(targetIda)}`);
+          const pts = await res.json();
+          if (!pts || pts.length === 0) {
+            alert(`No se encontraron puntos para el trazo de IDA "${targetIda}". Trazar y guardar la IDA primero para usarla como base.`);
+            return;
+          }
+
+          currentShapePoints = [...pts].reverse().map(p => ({
+            lat: p.shape_pt_lat,
+            lon: p.shape_pt_lon
+          }));
+
+          renderShapePolylineAndStats();
+          if (shapePolyline && gtfsMap) {
+            const bounds = shapePolyline.getBounds();
+            if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+          }
+
+          if (sel && sel.value === 'NUEVO' && inputNew) {
+            inputNew.value = `${baseId || 'IO33B'}_VUELTA`;
+          }
+
+          alert(`✅ ¡Trazo de VUELTA generado exitosamente!\n\nSe copiaron e invirtieron ${currentShapePoints.length} puntos de "${targetIda}".\nAhora puede activar el dibujo en el mapa para extenderlo o modificar tramos que difieran.`);
+        } catch (err) {
+          alert(`Error al generar trazo invertido: ${err.message}`);
         }
       });
     }
@@ -1483,6 +1686,13 @@
 
   async function loadSelectedShape(shapeId) {
     try {
+      if (typeof setShapeDirection === 'function') {
+        if (shapeId.includes('VUELTA') || shapeId.includes('_VTA')) {
+          setShapeDirection(1);
+        } else {
+          setShapeDirection(0);
+        }
+      }
       const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(shapeId)}`);
       const points = await res.json();
       currentShapePoints = points.map(p => ({
@@ -1495,6 +1705,9 @@
         if (bounds.isValid()) {
           gtfsMap.fitBounds(bounds, { padding: [30, 30] });
         }
+      }
+      if (typeof updateReferenceShape === 'function') {
+        updateReferenceShape();
       }
     } catch (e) {
       console.error('[GTFS] Error cargando trazo:', e);
@@ -1650,6 +1863,15 @@
       const routes = await res.json();
       allRoutes = routes;
 
+      // Si no tenemos la flota cargada, intentar cargarla para mostrar conteos
+      if (!fleetData || fleetData.length === 0) {
+        try {
+          const fRes = await fetch('/api/fleet');
+          const fData = await fRes.json();
+          if (fData && fData.units) fleetData = fData.units;
+        } catch (_) {}
+      }
+
       // Actualizar select en Trips
       const tripRouteSel = document.getElementById('trip-route-select');
       if (tripRouteSel) {
@@ -1664,17 +1886,30 @@
           return;
         }
 
-        listEl.innerHTML = routes.map(r => `
-          <div class="gtfs-pill-item">
-            <div>
-              <strong style="color: #38bdf8;">${r.route_short_name}</strong>
-              <span style="font-size: 0.72rem; color: var(--text-muted); margin-left: 6px;">${r.route_long_name || 'Sin itinerario'}</span>
+        listEl.innerHTML = routes.map(r => {
+          const assignedBuses = (fleetData || []).filter(u => u.ruta === r.route_short_name || u.ruta === r.route_id).length;
+          return `
+            <div class="gtfs-pill-item" style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.75rem;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <strong style="color: #38bdf8; font-size: 0.95rem;">${r.route_short_name}</strong>
+                  <span class="badge-gps-ok" style="font-size: 0.7rem; padding: 1px 6px;">🚍 ${assignedBuses} en flota</span>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+                  ${r.route_long_name || 'Sin itinerario definido'}
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.35rem; align-items: center;">
+                <button class="tbl-action-btn" onclick="window.autoGenerateTrips('${r.route_id}')" title="Crear viajes estándar de Ida y Vuelta para esta ruta" style="font-size: 0.72rem; padding: 3px 7px; color: #a78bfa; border-color: rgba(167, 139, 250, 0.4);">
+                  ⚡ Trips Ida/Vta
+                </button>
+                <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsRoute('${r.route_id}')" title="Eliminar Ruta">
+                  🗑️
+                </button>
+              </div>
             </div>
-            <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsRoute('${r.route_id}')" title="Eliminar Ruta">
-              🗑️
-            </button>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
     } catch (e) {
       console.error('[GTFS] Error cargando rutas:', e);
@@ -1733,6 +1968,45 @@
       else alert(`❌ Error: ${data.error}`);
     } catch (e) {
       alert(`❌ Error de conexión: ${e.message}`);
+    }
+  };
+
+  window.autoGenerateTrips = async function(routeId) {
+    if (!routeId) return;
+    const r = (allRoutes || []).find(item => item.route_id === routeId);
+    const shortName = r ? r.route_short_name : routeId;
+
+    const tripIda = {
+      trip_id: `${shortName}_IDA_01`,
+      route_id: routeId,
+      direction_id: 0,
+      shape_id: `${shortName}_IDA`,
+      trip_headsign: `Sentido Ida (${shortName})`
+    };
+
+    const tripVuelta = {
+      trip_id: `${shortName}_VTA_01`,
+      route_id: routeId,
+      direction_id: 1,
+      shape_id: `${shortName}_VUELTA`,
+      trip_headsign: `Sentido Vuelta (${shortName})`
+    };
+
+    try {
+      await fetch('/api/gtfs/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tripIda)
+      });
+      await fetch('/api/gtfs/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tripVuelta)
+      });
+      await loadTrips();
+      alert(`✅ Se crearon 2 patrones de viajes en SQLite para ${shortName}:\n• ${tripIda.trip_id} (Sentido 0 - Ida, Trazo: ${tripIda.shape_id})\n• ${tripVuelta.trip_id} (Sentido 1 - Vuelta, Trazo: ${tripVuelta.shape_id})`);
+    } catch (err) {
+      alert(`Error al generar viajes: ${err.message}`);
     }
   };
 

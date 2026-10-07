@@ -284,6 +284,33 @@ class FleetStore {
     }
   }
 
+  assignRoute(placa, ruta) {
+    const cleanPlaca = normalizePlaca(placa);
+    const cleanRuta = (ruta || 'S/R').toString().trim().toUpperCase();
+
+    if (!cleanPlaca) return { success: false, error: 'Placa inválida' };
+    if (!cleanRuta) return { success: false, error: 'Código de ruta requerido' };
+
+    try {
+      const existing = this.getByPlaca(cleanPlaca);
+      if (!existing) return { success: false, error: 'Unidad no encontrada' };
+
+      const now = Math.floor(Date.now() / 1000);
+      const update = db.prepare(`
+        UPDATE fleet 
+        SET ruta = ?, actualizadoEn = ?
+        WHERE placa = ?
+      `);
+      update.run(cleanRuta, now, cleanPlaca);
+
+      const updated = this.getByPlaca(cleanPlaca);
+      return { success: true, unit: updated };
+    } catch (err) {
+      console.error('[FleetStore] Error asignando ruta a unidad:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
   unassignGps(placa) {
     const cleanPlaca = normalizePlaca(placa);
     if (!cleanPlaca) return { success: false, error: 'Placa inválida' };

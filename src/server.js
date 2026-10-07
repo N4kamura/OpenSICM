@@ -311,6 +311,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 9b. Asignar Ruta a Unidad: POST /api/fleet/assign-route
+  if (method === 'POST' && pathname === '/api/fleet/assign-route') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { placa, ruta } = JSON.parse(body);
+        const result = fleetStore.assignRoute(placa, ruta);
+        if (result.success) {
+          const bus = stateManager.getBus(placa);
+          if (bus) {
+            bus.ruta = result.unit.ruta;
+            broadcastSse('telemetry', bus);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'OK', unit: result.unit }));
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ERROR', error: result.error }));
+        }
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ERROR', error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
   // 10. Desasignar GPS de Unidad: POST /api/fleet/unassign
   if (method === 'POST' && pathname === '/api/fleet/unassign') {
     let body = '';

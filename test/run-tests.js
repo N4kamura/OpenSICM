@@ -154,6 +154,11 @@ async function runTests() {
     assert.strictEqual(found.padron, '99');
     assert.strictEqual(found.tieneGps, true);
 
+    // Asignar nueva ruta
+    const routeRes = fleetStore.assignRoute('SQL999', 'CR42');
+    assert.strictEqual(routeRes.success, true);
+    assert.strictEqual(routeRes.unit.ruta, 'CR42');
+
     // Limpiar unidad de prueba
     fleetStore.deleteUnit('SQL999');
     assert.strictEqual(fleetStore.getByPlaca('SQL999'), null);

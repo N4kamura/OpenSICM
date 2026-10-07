@@ -574,8 +574,30 @@
                   <input type="text" id="gtfs-shape-new-input" placeholder="Nombre (ej. CR42_IDA)" style="display: none; margin-top: 0.4rem; text-transform: uppercase;">
                 </div>
 
+                <!-- Selector de Sentido (Ida vs Vuelta) -->
+                <div class="form-field">
+                  <label>Sentido del Recorrido</label>
+                  <div class="filter-pills" style="display: flex; gap: 0.35rem;">
+                    <button type="button" class="filter-pill active" id="btn-shape-dir-0" data-shape-dir="0" style="flex: 1; text-align: center;">
+                      🟢 IDA (Dir 0)
+                    </button>
+                    <button type="button" class="filter-pill" id="btn-shape-dir-1" data-shape-dir="1" style="flex: 1; text-align: center;">
+                      🟣 VUELTA (Dir 1)
+                    </button>
+                  </div>
+                </div>
+
                 <!-- Botones de Acción de Trazado -->
                 <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                  <button type="button" class="btn btn-secondary" id="btn-copy-invert-shape" style="justify-content: center; font-size: 0.76rem; border-color: #8b5cf6; color: #c4b5fd; display: none;" title="Copia los puntos del trazo de IDA en orden inverso como base para la VUELTA">
+                    🔄 Copiar e Invertir Ida para Vuelta
+                  </button>
+
+                  <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.74rem; color: var(--text-muted);">
+                    <input type="checkbox" id="chk-show-reference-shape" checked style="cursor: pointer;">
+                    <label for="chk-show-reference-shape" style="cursor: pointer;">👁️ Mostrar trazo complementario de guía</label>
+                  </div>
+
                   <button type="button" class="btn btn-primary" id="btn-toggle-drawing" style="justify-content: center;">
                     <span id="btn-drawing-icon">✏️</span> <span id="btn-drawing-text">Activar Dibujo en Mapa</span>
                   </button>
@@ -875,8 +897,11 @@
               <input type="text" id="unit-form-placa" required maxlength="6" placeholder="ej. A1B789" style="text-transform: uppercase;">
             </div>
             <div class="form-field">
-              <label>Ruta ATU *</label>
-              <input type="text" id="unit-form-ruta" required placeholder="ej. IO33B">
+              <label>Ruta ATU Asignada *</label>
+              <select id="unit-form-ruta-select" style="margin-bottom: 0.25rem;">
+                <option value="">-- Seleccionar de Rutas GTFS --</option>
+              </select>
+              <input type="text" id="unit-form-ruta" required placeholder="O escribir código (ej. IO33B)" style="text-transform: uppercase;">
             </div>
           </div>
 
