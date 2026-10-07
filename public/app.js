@@ -17,7 +17,11 @@
     currentFilter: 'TODOS',
     searchQuery: '',
     selectedPlaca: null,
-    atuStatus: 'DESCONECTADO'
+    atuStatus: 'DESCONECTADO',
+    kpisSummary: null,
+    unitKpis: new Map(),
+    kpiAlerts: [],
+    kpiSearch: ''
   };
 
   // Inicialización de Mapa Leaflet
@@ -90,6 +94,9 @@
     const hora = bus.timestamp ? new Date(bus.timestamp * 1000).toLocaleTimeString() : '--:--:--';
     const statusAtu = bus.atuStatus || 'PENDIENTE';
     const ignicionText = bus.ignicion === 1 ? 'ENCENDIDO (ACC ON)' : 'APAGADO';
+    const kpi = state.unitKpis.get(bus.placa);
+    const kmHoy = kpi ? `${kpi.kmRecorridos} km` : '0.0 km';
+    const iteBus = kpi ? `${kpi.itePorcentaje}%` : '100%';
 
     return `
       <div class="popup-container">
@@ -108,6 +115,14 @@
           <div class="popup-item">
             <span class="popup-lbl">Rumbo</span>
             <span class="popup-val">${bus.rumbo}°</span>
+          </div>
+          <div class="popup-item">
+            <span class="popup-lbl">Odometría Hoy</span>
+            <span class="popup-val" style="color: #38bdf8;">${kmHoy}</span>
+          </div>
+          <div class="popup-item">
+            <span class="popup-lbl">ITE Transmisión</span>
+            <span class="popup-val" style="color: #34d399;">${iteBus}</span>
           </div>
           <div class="popup-item">
             <span class="popup-lbl">Padrón</span>
@@ -306,6 +321,18 @@
           renderBusList();
           appendLog(`Cargadas ${data.buses.length} unidades activas.`);
         }
+        if (data.kpis) {
+          state.kpisSummary = data.kpis;
+          renderKpiCards(data.kpis);
+        }
+        if (data.unitKpis && Array.isArray(data.unitKpis)) {
+          data.unitKpis.forEach(u => state.unitKpis.set(u.placa, u));
+          renderKpiTable();
+        }
+        if (data.alerts && Array.isArray(data.alerts)) {
+          state.kpiAlerts = data.alerts;
+          renderKpiAlerts(data.alerts);
+        }
       } catch (err) {
         console.error('Error parseando init data:', err);
       }
@@ -350,6 +377,33 @@
         elCountAck.textContent = curAck + 1;
       } catch (err) {
         console.error('Error en evento atu_ack:', err);
+      }
+    });
+
+    // Eventos de KPIs y Alertas
+    evtSource.addEventListener('kpi_update', (e) => {
+      try {
+        const update = JSON.parse(e.data);
+        if (update && update.placa && update.kpi) {
+          state.unitKpis.set(update.placa, update.kpi);
+          const bus = state.buses.get(update.placa);
+          if (bus) updateMapMarker(bus);
+          renderKpiTable();
+        }
+      } catch (err) {
+        console.error('Error en evento kpi_update:', err);
+      }
+    });
+
+    evtSource.addEventListener('kpi_alert', (e) => {
+      try {
+        const alertObj = JSON.parse(e.data);
+        state.kpiAlerts.unshift(alertObj);
+        if (state.kpiAlerts.length > 50) state.kpiAlerts.pop();
+        renderKpiAlerts(state.kpiAlerts);
+        appendLog(`🚨 ALERTA: ${alertObj.placa} - ${alertObj.detalles}`);
+      } catch (err) {
+        console.error('Error en evento kpi_alert:', err);
       }
     });
 
@@ -463,6 +517,8 @@
         targetPanel.classList.add('active');
         if (targetId === 'view-map') {
           setTimeout(() => map.invalidateSize(), 200);
+        } else if (targetId === 'view-kpis') {
+          loadKpis();
         } else if (targetId === 'view-fleet') {
           loadFleet();
         } else if (targetId === 'view-testing') {
@@ -472,6 +528,194 @@
       }
     });
   });
+
+  // --- MÉTRICAS Y KPIS OPERACIONALES (SIN GTFS) ---
+  const elKpiValIte = document.getElementById('kpi-val-ite');
+  const elKpiSubIte = document.getElementById('kpi-sub-ite');
+  const elKpiBadgeIte = document.getElementById('kpi-badge-ite');
+  const elKpiValKm = document.getElementById('kpi-val-km');
+  const elKpiValMotor = document.getElementById('kpi-val-motor');
+  const elKpiValDisp = document.getElementById('kpi-val-disp');
+  const elKpiSubDisp = document.getElementById('kpi-sub-disp');
+  const elKpiValFmh = document.getElementById('kpi-val-fmh');
+  const elKpiSubFmh = document.getElementById('kpi-sub-fmh');
+  const elKpiValBlackouts = document.getElementById('kpi-val-blackouts');
+  const elKpiPeakBadge = document.getElementById('kpi-peak-badge');
+  const elKpiTableBody = document.getElementById('kpi-table-body');
+  const elKpiSearchInput = document.getElementById('kpi-search-input');
+  const elKpiAlertsFeed = document.getElementById('kpi-alerts-feed');
+  const elKpiAlertsCount = document.getElementById('kpi-alerts-count');
+  const btnRefreshKpis = document.getElementById('btn-refresh-kpis');
+
+  function renderKpiCards(summary) {
+    if (!summary) return;
+    if (elKpiValIte) {
+      elKpiValIte.textContent = `${summary.iteGlobal}%`;
+      if (summary.iteGlobal >= 95.0) {
+        elKpiValIte.className = 'kpi-main-val text-success';
+        if (elKpiBadgeIte) {
+          elKpiBadgeIte.className = 'kpi-badge badge-ok';
+          elKpiBadgeIte.textContent = 'Cumple (≥ 95%)';
+        }
+      } else {
+        elKpiValIte.className = 'kpi-main-val text-error';
+        if (elKpiBadgeIte) {
+          elKpiBadgeIte.className = 'kpi-badge badge-warn';
+          elKpiBadgeIte.textContent = 'Observado (< 95%)';
+        }
+      }
+    }
+    if (elKpiSubIte) {
+      elKpiSubIte.textContent = `${summary.totalTramasAck} / ${summary.totalTramasEnviadas} ACKs`;
+    }
+    if (elKpiValKm) elKpiValKm.textContent = `${summary.totalKm} km`;
+    if (elKpiValMotor) elKpiValMotor.textContent = `${summary.totalHorasMotor} h`;
+    if (elKpiValDisp) elKpiValDisp.textContent = `${summary.disponibilidadFlota}%`;
+    if (elKpiSubDisp) elKpiSubDisp.textContent = `${summary.flotaActivaHoy} activas de ${summary.flotaTotal} en padrón`;
+
+    if (elKpiValFmh) elKpiValFmh.textContent = `${summary.fmhPorcentaje}%`;
+    if (elKpiSubFmh) elKpiSubFmh.textContent = `Meta hora punta: ${summary.fmhMeta} unidades`;
+
+    if (elKpiValBlackouts) {
+      elKpiValBlackouts.textContent = summary.totalBlackouts;
+      elKpiValBlackouts.className = summary.totalBlackouts > 0 ? 'kpi-main-val text-error' : 'kpi-main-val text-success';
+    }
+
+    if (elKpiPeakBadge) {
+      if (summary.esHoraPunta) {
+        elKpiPeakBadge.className = 'badge-peak peak-on';
+        elKpiPeakBadge.textContent = '🟡 HORA PUNTA ACTIVA';
+      } else {
+        elKpiPeakBadge.className = 'badge-peak peak-off';
+        elKpiPeakBadge.textContent = '⚪ HORA VALLE';
+      }
+    }
+  }
+
+  function renderKpiTable() {
+    if (!elKpiTableBody) return;
+    const query = (state.kpiSearch || '').toLowerCase().trim();
+    const units = Array.from(state.unitKpis.values());
+
+    const filtered = units.filter(u => {
+      if (!query) return true;
+      return (u.placa && u.placa.toLowerCase().includes(query)) ||
+             (u.ruta && u.ruta.toLowerCase().includes(query)) ||
+             (u.padron && u.padron.toString().toLowerCase().includes(query));
+    });
+
+    if (filtered.length === 0) {
+      elKpiTableBody.innerHTML = `
+        <tr>
+          <td colspan="9" style="text-align: center; color: var(--text-dim); padding: 2rem;">
+            No se encontraron unidades registradas en el consolidado.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    let html = '';
+    filtered.forEach(u => {
+      const iteColor = u.itePorcentaje >= 95 ? '#34d399' : (u.tramasEnviadas === 0 ? 'var(--text-dim)' : '#f87171');
+      const iteBadge = `<span style="font-weight: 700; color: ${iteColor};">${u.itePorcentaje}%</span>`;
+      const blackoutBadge = u.blackoutsCount > 0
+        ? `<span style="color: #f87171; font-weight: 700;">${u.blackoutsCount}</span>`
+        : `<span style="color: var(--text-dim);">0</span>`;
+
+      html += `
+        <tr>
+          <td><strong style="font-family: monospace; font-size: 0.95rem; color: #fff;">${u.placa}</strong></td>
+          <td><span class="bus-ruta-badge">${u.ruta || 'S/R'}</span></td>
+          <td>${u.padron || '-'}</td>
+          <td style="color: #38bdf8; font-weight: 700;">${u.kmRecorridos} km</td>
+          <td>${u.horasMotor} h</td>
+          <td style="font-size: 0.75rem; color: var(--text-muted);">${u.tramasEnviadas} / ${u.tramasAck}</td>
+          <td>${iteBadge}</td>
+          <td>${blackoutBadge}</td>
+          <td style="font-size: 0.75rem;">${u.velocidadMax ? `${u.velocidadMax} km/h` : '-'}</td>
+        </tr>
+      `;
+    });
+
+    elKpiTableBody.innerHTML = html;
+  }
+
+  function renderKpiAlerts(alerts) {
+    if (!elKpiAlertsFeed) return;
+    if (!alerts || alerts.length === 0) {
+      elKpiAlertsFeed.innerHTML = `
+        <div style="text-align: center; color: var(--text-dim); padding: 2rem; font-size: 0.85rem;">
+          No se registran alertas operacionales hoy.
+        </div>
+      `;
+      if (elKpiAlertsCount) elKpiAlertsCount.textContent = '0 eventos';
+      return;
+    }
+
+    if (elKpiAlertsCount) elKpiAlertsCount.textContent = `${alerts.length} eventos`;
+
+    let html = '';
+    alerts.forEach(a => {
+      const hora = a.timestamp ? new Date(a.timestamp * 1000).toLocaleTimeString() : '--:--';
+      const isAlta = a.severidad === 'ALTA';
+      html += `
+        <div class="alert-feed-item ${isAlta ? '' : 'alert-warn'}">
+          <div class="alert-item-header">
+            <span class="alert-item-title">
+              <span>${isAlta ? '🔴' : '🟡'}</span>
+              <span>${a.tipo || 'ALERTA'} [${a.placa}]</span>
+            </span>
+            <span class="alert-item-time">${hora}</span>
+          </div>
+          <div class="alert-item-desc">${a.detalles}</div>
+        </div>
+      `;
+    });
+
+    elKpiAlertsFeed.innerHTML = html;
+  }
+
+  async function loadKpis() {
+    try {
+      const [sumRes, unitsRes, alertsRes] = await Promise.all([
+        fetch('/api/kpis/summary'),
+        fetch('/api/kpis/units'),
+        fetch('/api/kpis/alerts')
+      ]);
+
+      if (sumRes.ok) {
+        const summary = await sumRes.json();
+        state.kpisSummary = summary;
+        renderKpiCards(summary);
+      }
+      if (unitsRes.ok) {
+        const units = await unitsRes.json();
+        units.forEach(u => state.unitKpis.set(u.placa, u));
+        renderKpiTable();
+      }
+      if (alertsRes.ok) {
+        const alerts = await alertsRes.json();
+        state.kpiAlerts = alerts;
+        renderKpiAlerts(alerts);
+      }
+    } catch (err) {
+      console.error('Error cargando KPIs:', err);
+    }
+  }
+
+  if (elKpiSearchInput) {
+    elKpiSearchInput.addEventListener('input', (e) => {
+      state.kpiSearch = e.target.value;
+      renderKpiTable();
+    });
+  }
+
+  if (btnRefreshKpis) {
+    btnRefreshKpis.addEventListener('click', () => {
+      loadKpis();
+    });
+  }
 
   // --- GESTIÓN DE FLOTA Y ASIGNACIÓN DE GPS ---
   let fleetData = [];

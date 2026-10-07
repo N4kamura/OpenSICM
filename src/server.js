@@ -11,6 +11,7 @@ const stateManager = require('./state-manager');
 const atuForwarder = require('./atu-forwarder');
 const tcpIngest = require('./ingest/tcp-ingest');
 const fleetStore = require('./fleet-store');
+const kpiEngine = require('./kpi-engine');
 
 // Mapa de Clientes SSE activos
 const sseClients = new Set();
@@ -59,10 +60,13 @@ function processIncomingTelemetry(rawData) {
   // 1. Actualizar estado de la unidad en memoria
   const updatedBus = stateManager.updateBusTelemetry(internalState);
 
-  // 2. Enviar a la ATU a través del forwarder WebSocket
+  // 2. Procesar en motor de KPIs (odometría, horas motor, etc.)
+  kpiEngine.processTelemetry(internalState);
+
+  // 3. Enviar a la ATU a través del forwarder WebSocket
   atuForwarder.sendPayload(atuPayload);
 
-  // 3. Notificar en tiempo real al visualizador web vía SSE
+  // 4. Notificar en tiempo real al visualizador web vía SSE
   broadcastSse('telemetry', updatedBus);
 
   return { success: true, bus: updatedBus, atuPayload };
@@ -79,7 +83,17 @@ atuForwarder.on('status_change', (data) => {
 });
 
 atuForwarder.on('frame_ack', (ack) => {
+  kpiEngine.recordAtuAck(ack);
   broadcastSse('atu_ack', ack);
+});
+
+// Escuchar eventos y alertas del motor de KPIs
+kpiEngine.on('kpi_alert', (alert) => {
+  broadcastSse('kpi_alert', alert);
+});
+
+kpiEngine.on('kpi_update', (update) => {
+  broadcastSse('kpi_update', update);
 });
 
 // Servidor HTTP
@@ -132,6 +146,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 3b. Métricas y KPIs Globales de la Flota (Sin GTFS)
+  if (method === 'GET' && pathname === '/api/kpis/summary') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(kpiEngine.getSummary()));
+    return;
+  }
+
+  // 3c. Métricas y KPIs por Unidad Individual
+  if (method === 'GET' && pathname === '/api/kpis/units') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(kpiEngine.getAllUnitKpis()));
+    return;
+  }
+
+  // 3d. Alertas de Operación (Blackouts / Pérdida de Señal)
+  if (method === 'GET' && pathname === '/api/kpis/alerts') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(kpiEngine.getAlerts(50)));
+    return;
+  }
+
   // 4. Server-Sent Events (SSE) para actualización en tiempo real del frontend
   if (method === 'GET' && pathname === '/api/stream') {
     res.writeHead(200, {
@@ -145,7 +180,10 @@ const server = http.createServer((req, res) => {
     const initData = {
       atu: atuForwarder.getMetrics(),
       stats: stateManager.getFleetStats(),
-      buses: stateManager.getAllBuses()
+      buses: stateManager.getAllBuses(),
+      kpis: kpiEngine.getSummary(),
+      unitKpis: kpiEngine.getAllUnitKpis(),
+      alerts: kpiEngine.getAlerts(20)
     };
     res.write(`event: init\ndata: ${JSON.stringify(initData)}\n\n`);
 
@@ -409,6 +447,11 @@ function shutdown(signal) {
   console.log(`\n[OpenSICM] Recibida señal ${signal}. Cerrando ordenadamente...`);
   tcpIngest.stop();
   atuForwarder.stop();
+  try {
+    kpiEngine.flushToDatabase();
+  } catch (err) {
+    console.warn('[OpenSICM] Error guardando KPIs al apagar:', err.message);
+  }
   server.close(() => {
     console.log('[OpenSICM] Servidor cerrado. Proceso terminado con éxito.');
     process.exit(0);

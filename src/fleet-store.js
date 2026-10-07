@@ -1,14 +1,15 @@
 /**
- * OpenSICM - Módulo de Almacén y Gestión de Flota y GPS
- * Persiste el inventario de unidades de transporte y su asignación de equipos GPS en data/fleet.json
+ * OpenSICM - Módulo de Almacén y Gestión de Flota y GPS (SQLite)
+ * Persiste el inventario de unidades de transporte y su asignación de equipos GPS en SQLite (data/opensicm.db)
  */
 const fs = require('fs');
 const path = require('path');
+const db = require('./db');
 const { normalizePlaca, normalizeImei } = require('./validator');
 
-const FLEET_FILE = path.resolve(__dirname, '../data/fleet.json');
+const LEGACY_FLEET_FILE = path.resolve(__dirname, '../data/fleet.json');
 
-// Unidades iniciales por defecto para pruebas
+// Unidades iniciales por defecto para pruebas si la BD está vacía
 const DEFAULT_FLEET = [
   {
     placa: 'A1B789',
@@ -16,7 +17,7 @@ const DEFAULT_FLEET = [
     padron: '12',
     imei: '864201041234561',
     modeloGps: 'TELTONIKA_FMB920',
-    activo: true,
+    activo: 1,
     notas: 'Unidad operativa - Javier Prado'
   },
   {
@@ -25,7 +26,7 @@ const DEFAULT_FLEET = [
     padron: '45',
     imei: '864201041234562',
     modeloGps: 'SUNTECH_ST310',
-    activo: true,
+    activo: 1,
     notas: 'Unidad operativa - Vía Expresa'
   },
   {
@@ -34,7 +35,7 @@ const DEFAULT_FLEET = [
     padron: '08',
     imei: '864201041234563',
     modeloGps: 'QUECLINK_GV300',
-    activo: true,
+    activo: 1,
     notas: 'Unidad operativa - Av. Brasil'
   },
   {
@@ -43,7 +44,7 @@ const DEFAULT_FLEET = [
     padron: '27',
     imei: '864201041234564',
     modeloGps: 'TELTONIKA_FMC130',
-    activo: true,
+    activo: 1,
     notas: 'Unidad en mantenimiento preventivo'
   },
   {
@@ -52,7 +53,7 @@ const DEFAULT_FLEET = [
     padron: '33',
     imei: '864201041234565',
     modeloGps: 'SUNTECH_ST340',
-    activo: true,
+    activo: 1,
     notas: 'Unidad de retén'
   },
   {
@@ -61,7 +62,7 @@ const DEFAULT_FLEET = [
     padron: '19',
     imei: '',
     modeloGps: '',
-    activo: true,
+    activo: 1,
     notas: 'Bus nuevo en trámite de equipamiento'
   },
   {
@@ -70,75 +71,114 @@ const DEFAULT_FLEET = [
     padron: '52',
     imei: '',
     modeloGps: '',
-    activo: true,
+    activo: 1,
     notas: 'Requiere instalación de nuevo equipo GPS'
   }
 ];
 
 class FleetStore {
   constructor() {
-    this.fleet = [];
-    this.load();
+    this.initDatabase();
   }
 
-  load() {
+  /**
+   * Inicializa la tabla fleet en SQLite y migra desde fleet.json si existe
+   */
+  initDatabase() {
     try {
-      if (fs.existsSync(FLEET_FILE)) {
-        const raw = fs.readFileSync(FLEET_FILE, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          this.fleet = parsed;
-          return;
+      const countStmt = db.prepare('SELECT COUNT(*) AS total FROM fleet');
+      const row = countStmt.get();
+
+      if (row.total === 0) {
+        console.log('[FleetStore] Inicializando flota en base de datos SQLite...');
+        let initialUnits = DEFAULT_FLEET;
+
+        // Si existía un archivo fleet.json previo, migrarlo a SQLite
+        if (fs.existsSync(LEGACY_FLEET_FILE)) {
+          try {
+            const raw = fs.readFileSync(LEGACY_FLEET_FILE, 'utf8');
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              initialUnits = parsed;
+              console.log(`[FleetStore] Migrando ${parsed.length} unidades desde legacy fleet.json a SQLite`);
+            }
+          } catch (err) {
+            console.warn('[FleetStore] Error leyendo legacy fleet.json:', err.message);
+          }
+        }
+
+        const insert = db.prepare(`
+          INSERT INTO fleet (placa, ruta, padron, imei, modeloGps, activo, notas, creadoEn, actualizadoEn)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const now = Math.floor(Date.now() / 1000);
+        for (const u of initialUnits) {
+          insert.run(
+            u.placa,
+            u.ruta || 'S/R',
+            u.padron || '',
+            u.imei || '',
+            u.modeloGps || '',
+            u.activo !== false ? 1 : 0,
+            u.notas || '',
+            u.creadoEn || now,
+            u.actualizadoEn || now
+          );
         }
       }
     } catch (err) {
-      console.warn('[FleetStore] Error leyendo fleet.json, inicializando por defecto:', err.message);
+      console.error('[FleetStore] Error inicializando tabla de flota en SQLite:', err.message);
     }
-
-    // Inicializar con la flota por defecto
-    this.fleet = [...DEFAULT_FLEET];
-    this.saveToDisk();
   }
 
-  saveToDisk() {
-    try {
-      const dir = path.dirname(FLEET_FILE);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(FLEET_FILE, JSON.stringify(this.fleet, null, 2), 'utf8');
-    } catch (err) {
-      console.error('[FleetStore] Error guardando fleet.json:', err.message);
-    }
+  /**
+   * Normaliza una fila leída desde SQLite
+   */
+  formatRow(row) {
+    if (!row) return null;
+    return {
+      ...row,
+      activo: row.activo === 1,
+      tieneGps: !!(row.imei && row.imei.trim().length >= 10)
+    };
   }
 
   getAll() {
-    return this.fleet.map(u => ({
-      ...u,
-      tieneGps: !!(u.imei && u.imei.trim().length >= 10)
-    }));
+    try {
+      const stmt = db.prepare('SELECT * FROM fleet ORDER BY ruta, padron, placa');
+      const rows = stmt.all();
+      return rows.map(r => this.formatRow(r));
+    } catch (err) {
+      console.error('[FleetStore] Error obteniendo unidades:', err.message);
+      return [];
+    }
   }
 
   getByPlaca(placa) {
     const clean = normalizePlaca(placa);
     if (!clean) return null;
-    const u = this.fleet.find(item => item.placa === clean);
-    if (!u) return null;
-    return {
-      ...u,
-      tieneGps: !!(u.imei && u.imei.trim().length >= 10)
-    };
+    try {
+      const stmt = db.prepare('SELECT * FROM fleet WHERE placa = ?');
+      const row = stmt.get(clean);
+      return this.formatRow(row);
+    } catch (err) {
+      console.error('[FleetStore] Error buscando por placa:', err.message);
+      return null;
+    }
   }
 
   getByImei(imei) {
     const clean = normalizeImei(imei);
     if (!clean) return null;
-    const u = this.fleet.find(item => item.imei === clean);
-    if (!u) return null;
-    return {
-      ...u,
-      tieneGps: true
-    };
+    try {
+      const stmt = db.prepare('SELECT * FROM fleet WHERE imei = ?');
+      const row = stmt.get(clean);
+      return this.formatRow(row);
+    } catch (err) {
+      console.error('[FleetStore] Error buscando por IMEI:', err.message);
+      return null;
+    }
   }
 
   saveUnit(data) {
@@ -152,37 +192,60 @@ class FleetStore {
     const imei = data.imei ? normalizeImei(data.imei) : '';
     const modeloGps = (data.modeloGps || '').toString().trim().toUpperCase();
     const notas = (data.notas || '').toString().trim();
-    const activo = data.activo !== false;
+    const activo = data.activo !== false ? 1 : 0;
+    const now = Math.floor(Date.now() / 1000);
 
-    // Verificar si el IMEI ya está asignado a otra placa distinta
-    if (imei) {
-      const existingImei = this.fleet.find(item => item.imei === imei && item.placa !== placa);
-      if (existingImei) {
-        return { success: false, error: `El IMEI ${imei} ya está asignado a la placa ${existingImei.placa}` };
+    try {
+      // Verificar conflicto de IMEI con otra placa
+      if (imei) {
+        const conflictStmt = db.prepare('SELECT placa FROM fleet WHERE imei = ? AND placa != ?');
+        const conflict = conflictStmt.get(imei, placa);
+        if (conflict) {
+          return { success: false, error: `El IMEI ${imei} ya está asignado a la placa ${conflict.placa}` };
+        }
       }
+
+      const existing = this.getByPlaca(placa);
+      if (existing) {
+        const update = db.prepare(`
+          UPDATE fleet 
+          SET ruta = ?, padron = ?, imei = ?, modeloGps = ?, activo = ?, notas = ?, actualizadoEn = ?
+          WHERE placa = ?
+        `);
+        update.run(
+          ruta,
+          padron,
+          imei || '',
+          imei ? (modeloGps || 'GENERIC_GPS') : '',
+          activo,
+          notas,
+          now,
+          placa
+        );
+      } else {
+        const insert = db.prepare(`
+          INSERT INTO fleet (placa, ruta, padron, imei, modeloGps, activo, notas, creadoEn, actualizadoEn)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insert.run(
+          placa,
+          ruta,
+          padron,
+          imei || '',
+          imei ? (modeloGps || 'GENERIC_GPS') : '',
+          activo,
+          notas,
+          now,
+          now
+        );
+      }
+
+      const updated = this.getByPlaca(placa);
+      return { success: true, unit: updated };
+    } catch (err) {
+      console.error('[FleetStore] Error guardando unidad en SQLite:', err.message);
+      return { success: false, error: err.message };
     }
-
-    const idx = this.fleet.findIndex(item => item.placa === placa);
-    const unit = {
-      placa,
-      ruta,
-      padron,
-      imei: imei || '',
-      modeloGps: imei ? (modeloGps || 'GENERIC_GPS') : '',
-      activo,
-      notas,
-      actualizadoEn: Math.floor(Date.now() / 1000)
-    };
-
-    if (idx >= 0) {
-      this.fleet[idx] = { ...this.fleet[idx], ...unit };
-    } else {
-      unit.creadoEn = Math.floor(Date.now() / 1000);
-      this.fleet.push(unit);
-    }
-
-    this.saveToDisk();
-    return { success: true, unit };
   }
 
   assignGps(placa, imei, modeloGps) {
@@ -192,69 +255,90 @@ class FleetStore {
     if (!cleanPlaca) return { success: false, error: 'Placa inválida' };
     if (!cleanImei) return { success: false, error: 'IMEI inválido (debe tener 15 dígitos)' };
 
-    // Verificar si el IMEI ya está asignado a otro bus
-    const conflict = this.fleet.find(item => item.imei === cleanImei && item.placa !== cleanPlaca);
-    if (conflict) {
-      return { success: false, error: `El IMEI ${cleanImei} ya se encuentra asignado a la unidad ${conflict.placa}` };
+    try {
+      // Verificar si el IMEI ya está asignado a otra placa
+      const conflictStmt = db.prepare('SELECT placa FROM fleet WHERE imei = ? AND placa != ?');
+      const conflict = conflictStmt.get(cleanImei, cleanPlaca);
+      if (conflict) {
+        return { success: false, error: `El IMEI ${cleanImei} ya se encuentra asignado a la unidad ${conflict.placa}` };
+      }
+
+      const existing = this.getByPlaca(cleanPlaca);
+      if (!existing) {
+        return { success: false, error: `Unidad con placa ${cleanPlaca} no encontrada` };
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const update = db.prepare(`
+        UPDATE fleet 
+        SET imei = ?, modeloGps = ?, actualizadoEn = ?
+        WHERE placa = ?
+      `);
+      update.run(cleanImei, (modeloGps || 'TELTONIKA_FMB920').toString().trim().toUpperCase(), now, cleanPlaca);
+
+      const updated = this.getByPlaca(cleanPlaca);
+      return { success: true, unit: updated };
+    } catch (err) {
+      console.error('[FleetStore] Error asignando GPS:', err.message);
+      return { success: false, error: err.message };
     }
-
-    const unit = this.fleet.find(item => item.placa === cleanPlaca);
-    if (!unit) {
-      return { success: false, error: `Unidad con placa ${cleanPlaca} no encontrada` };
-    }
-
-    unit.imei = cleanImei;
-    unit.modeloGps = (modeloGps || 'TELTONIKA_FMB920').toString().trim().toUpperCase();
-    unit.actualizadoEn = Math.floor(Date.now() / 1000);
-
-    this.saveToDisk();
-    return { success: true, unit };
   }
 
   unassignGps(placa) {
     const cleanPlaca = normalizePlaca(placa);
     if (!cleanPlaca) return { success: false, error: 'Placa inválida' };
 
-    const unit = this.fleet.find(item => item.placa === cleanPlaca);
-    if (!unit) return { success: false, error: 'Unidad no encontrada' };
+    try {
+      const existing = this.getByPlaca(cleanPlaca);
+      if (!existing) return { success: false, error: 'Unidad no encontrada' };
 
-    unit.imei = '';
-    unit.modeloGps = '';
-    unit.actualizadoEn = Math.floor(Date.now() / 1000);
+      const now = Math.floor(Date.now() / 1000);
+      const update = db.prepare(`
+        UPDATE fleet 
+        SET imei = '', modeloGps = '', actualizadoEn = ?
+        WHERE placa = ?
+      `);
+      update.run(now, cleanPlaca);
 
-    this.saveToDisk();
-    return { success: true, unit };
+      const updated = this.getByPlaca(cleanPlaca);
+      return { success: true, unit: updated };
+    } catch (err) {
+      console.error('[FleetStore] Error desasignando GPS:', err.message);
+      return { success: false, error: err.message };
+    }
   }
 
   deleteUnit(placa) {
     const cleanPlaca = normalizePlaca(placa);
     if (!cleanPlaca) return { success: false, error: 'Placa inválida' };
 
-    const initialLen = this.fleet.length;
-    this.fleet = this.fleet.filter(item => item.placa !== cleanPlaca);
-
-    if (this.fleet.length === initialLen) {
-      return { success: false, error: 'Unidad no encontrada' };
+    try {
+      const del = db.prepare('DELETE FROM fleet WHERE placa = ?');
+      const res = del.run(cleanPlaca);
+      if (res.changes === 0) {
+        return { success: false, error: 'Unidad no encontrada' };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[FleetStore] Error eliminando unidad:', err.message);
+      return { success: false, error: err.message };
     }
-
-    this.saveToDisk();
-    return { success: true };
   }
 
   getStats() {
-    let conGps = 0;
-    let sinGps = 0;
+    try {
+      const totalStmt = db.prepare('SELECT COUNT(*) AS total FROM fleet');
+      const conGpsStmt = db.prepare("SELECT COUNT(*) AS conGps FROM fleet WHERE imei IS NOT NULL AND length(trim(imei)) >= 10");
 
-    this.fleet.forEach(u => {
-      if (u.imei && u.imei.trim().length >= 10) conGps++;
-      else sinGps++;
-    });
+      const total = totalStmt.get().total;
+      const conGps = conGpsStmt.get().conGps;
+      const sinGps = total - conGps;
 
-    return {
-      total: this.fleet.length,
-      conGps,
-      sinGps
-    };
+      return { total, conGps, sinGps };
+    } catch (err) {
+      console.error('[FleetStore] Error obteniendo estadísticas:', err.message);
+      return { total: 0, conGps: 0, sinGps: 0 };
+    }
   }
 }
 

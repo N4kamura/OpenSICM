@@ -131,6 +131,113 @@ async function runTests() {
     assert.strictEqual(bus.estadoOperacional, 'OFFLINE');
   });
 
+  // --- 2b. PRUEBAS DE FLOTA EN SQLITE Y MOTOR DE KPIS ---
+  console.log('\n--- 2b. Pruebas de Flota en SQLite y Motor de KPIs (Sin GTFS) ---');
+
+  const fleetStore = require('../src/fleet-store');
+  const kpiEngine = require('../src/kpi-engine');
+
+  test('fleetStore (SQLite): persiste y recupera unidades correctamente', () => {
+    const saveRes = fleetStore.saveUnit({
+      placa: 'SQL999',
+      ruta: 'IO33B',
+      padron: '99',
+      imei: '864201049999999',
+      modeloGps: 'TELTONIKA_FMB920',
+      notas: 'Unidad de test SQLite'
+    });
+    assert.strictEqual(saveRes.success, true);
+    assert.strictEqual(saveRes.unit.placa, 'SQL999');
+
+    const found = fleetStore.getByPlaca('SQL999');
+    assert.ok(found);
+    assert.strictEqual(found.padron, '99');
+    assert.strictEqual(found.tieneGps, true);
+
+    // Limpiar unidad de prueba
+    fleetStore.deleteUnit('SQL999');
+    assert.strictEqual(fleetStore.getByPlaca('SQL999'), null);
+  });
+
+  test('kpiEngine: acumula odometría en km (Haversine) y horas de motor', () => {
+    const t0 = Math.floor(Date.now() / 1000) - 60;
+    // Punto 1: Óvalo Monitor (-12.083812, -76.971038)
+    kpiEngine.processTelemetry({
+      placa: 'KPIT01',
+      ruta: 'IO33B',
+      padron: '11',
+      latitud: -12.083812,
+      longitud: -76.971038,
+      velocidad: 30.0,
+      ignicion: 1,
+      timestamp: t0
+    });
+
+    // Punto 2: ~0.42 km al suroeste en Av. Javier Prado (-12.085500, -76.974500) 30s después
+    kpiEngine.processTelemetry({
+      placa: 'KPIT01',
+      ruta: 'IO33B',
+      padron: '11',
+      latitud: -12.085500,
+      longitud: -76.974500,
+      velocidad: 45.0,
+      ignicion: 1,
+      timestamp: t0 + 30
+    });
+
+    const kpi = kpiEngine.getOrCreateUnitKpi('KPIT01');
+    assert.ok(kpi.kmRecorridos >= 0.3, `Odometría debe haber acumulado distancia (>= 0.3 km), actual: ${kpi.kmRecorridos}`);
+    assert.ok(kpi.segundosMotor >= 30, `Segundos motor debe acumular tiempo, actual: ${kpi.segundosMotor}`);
+    assert.strictEqual(kpi.tramasEnviadas, 2);
+  });
+
+  test('kpiEngine: calcula ITE % al recibir ACK de la ATU', () => {
+    kpiEngine.recordAtuAck({ placa: 'KPIT01', timestamp: Math.floor(Date.now() / 1000) });
+    const formatted = kpiEngine.formatUnitKpi(kpiEngine.getOrCreateUnitKpi('KPIT01'));
+    // 2 enviadas, 1 confirmada -> 50%
+    assert.strictEqual(formatted.itePorcentaje, 50.0);
+  });
+
+  test('kpiEngine: detecta blackout si se supera el lapso de 90 segundos con motor encendido', () => {
+    const tLast = Math.floor(Date.now() / 1000) - 200;
+    kpiEngine.processTelemetry({
+      placa: 'KPIT02',
+      ruta: 'IO33B',
+      latitud: -12.046374,
+      longitud: -77.042793,
+      velocidad: 20.0,
+      ignicion: 1,
+      timestamp: tLast
+    });
+
+    // Reporte 120 segundos después (> 90s)
+    kpiEngine.processTelemetry({
+      placa: 'KPIT02',
+      ruta: 'IO33B',
+      latitud: -12.046500,
+      longitud: -77.042900,
+      velocidad: 22.0,
+      ignicion: 1,
+      timestamp: tLast + 120
+    });
+
+    const kpi = kpiEngine.getOrCreateUnitKpi('KPIT02');
+    assert.ok(kpi.blackoutsCount >= 1, 'Debe haber contabilizado al menos 1 blackout');
+
+    const alerts = kpiEngine.getAlerts(10);
+    const hasBlackoutAlert = alerts.some(a => a.tipo === 'BLACKOUT_GPS' && a.placa === 'KPIT02');
+    assert.ok(hasBlackoutAlert, 'Debe existir una alerta de blackout para KPIT02');
+  });
+
+  test('kpiEngine.getSummary: genera métricas consolidadas de la flota', () => {
+    const summary = kpiEngine.getSummary();
+    assert.ok(typeof summary.totalKm === 'number');
+    assert.ok(typeof summary.totalHorasMotor === 'number');
+    assert.ok(typeof summary.iteGlobal === 'number');
+    assert.ok(typeof summary.disponibilidadFlota === 'number');
+    assert.ok(typeof summary.esHoraPunta === 'boolean');
+  });
+
   // --- 3. PRUEBA INTEGRAL EXTREMO A EXTREMO (MOCK ATU + GATEWAY + REST) ---
   console.log('\n--- 3. Prueba Integral de Enlace WebSocket y API REST ---');
 

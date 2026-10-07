@@ -93,6 +93,15 @@
         <span>🗺️ Mapa en Vivo</span>
       </button>
 
+      <button class="nav-tab-btn" data-target="view-kpis">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+        <span>📊 Métricas & KPIs</span>
+      </button>
+
       <button class="nav-tab-btn" data-target="view-fleet">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="1" y="3" width="15" height="13" rx="2"></rect>
@@ -158,6 +167,156 @@
           <div class="legend-item"><span class="legend-badge bg-offline"></span> Sin reporte (&gt; 90s)</div>
         </div>
       </section>
+    </div>
+
+    <!-- PESTAÑA: MÉTRICAS & KPIS OPERACIONALES (SIN GTFS) -->
+    <div class="view-panel" id="view-kpis">
+      <div class="kpis-view-container">
+        <!-- Barra de Encabezado de KPIs -->
+        <div class="kpis-header-bar">
+          <div>
+            <h2 class="kpis-title">📊 Métricas Operacionales y Cumplimiento ATU</h2>
+            <p class="kpis-subtitle">Cálculo en tiempo real con telemetría cada 30s • Persistencia en SQLite local</p>
+          </div>
+          <div class="kpis-header-actions">
+            <span id="kpi-peak-badge" class="badge-peak peak-off">⚪ HORA VALLE</span>
+            <button class="btn btn-secondary" id="btn-refresh-kpis" title="Refrescar métricas">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              <span>Actualizar</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Cuadrícula de 6 Tarjetas Ejecutivas de KPIs -->
+        <div class="kpi-cards-grid">
+          <!-- 1. ITE Transmisión ATU -->
+          <div class="kpi-card" id="card-ite">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Índice Transmisión ATU (ITE)</span>
+              <span class="kpi-icon">📡</span>
+            </div>
+            <div class="kpi-main-val text-success" id="kpi-val-ite">100%</div>
+            <div class="kpi-meta-row">
+              <span class="kpi-badge badge-ok" id="kpi-badge-ite">Meta: ≥ 95%</span>
+              <span class="kpi-sub" id="kpi-sub-ite">0 / 0 ACKs confirmados</span>
+            </div>
+          </div>
+
+          <!-- 2. Odometría Total Flota -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Odometría Total Hoy</span>
+              <span class="kpi-icon">🛣️</span>
+            </div>
+            <div class="kpi-main-val text-primary" id="kpi-val-km">0.0 km</div>
+            <div class="kpi-meta-row">
+              <span class="kpi-sub">Distancia rodada acumulada (Haversine)</span>
+            </div>
+          </div>
+
+          <!-- 3. Horas Motor Flota (ACC ON) -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Horas Motor Flota</span>
+              <span class="kpi-icon">⏱️</span>
+            </div>
+            <div class="kpi-main-val text-warning" id="kpi-val-motor">0.0 h</div>
+            <div class="kpi-meta-row">
+              <span class="kpi-sub">Tiempo acumulado ignición encendida</span>
+            </div>
+          </div>
+
+          <!-- 4. Disponibilidad de Flota (%IDF) -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Disponibilidad de Flota</span>
+              <span class="kpi-icon">🚍</span>
+            </div>
+            <div class="kpi-main-val text-info" id="kpi-val-disp">0%</div>
+            <div class="kpi-meta-row">
+              <span class="kpi-sub" id="kpi-sub-disp">0 activas de 0 en padrón</span>
+            </div>
+          </div>
+
+          <!-- 5. Flota Mínima Habilitada (FMH) -->
+          <div class="kpi-card">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Flota Mínima (FMH)</span>
+              <span class="kpi-icon">⚖️</span>
+            </div>
+            <div class="kpi-main-val" id="kpi-val-fmh">100%</div>
+            <div class="kpi-meta-row">
+              <span class="kpi-sub" id="kpi-sub-fmh">Meta hora punta: 0 unidades</span>
+            </div>
+          </div>
+
+          <!-- 6. Blackouts / Silencios GPS -->
+          <div class="kpi-card" id="card-blackouts">
+            <div class="kpi-card-header">
+              <span class="kpi-label">Silencios GPS (&gt;90s)</span>
+              <span class="kpi-icon">⚠️</span>
+            </div>
+            <div class="kpi-main-val text-success" id="kpi-val-blackouts">0</div>
+            <div class="kpi-meta-row">
+              <span class="kpi-sub">Lapsos sin señal con motor encendido</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Contenedor Inferior: Tabla de Desempeño y Feed de Alertas -->
+        <div class="kpis-split-layout">
+          <!-- Columna Izquierda: Tabla por Unidad -->
+          <div class="kpis-table-section">
+            <div class="kpis-section-header">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <h3 style="font-size: 1rem; margin: 0;">Rendimiento Operacional por Unidad</h3>
+              </div>
+              <input type="text" class="fleet-search-input" id="kpi-search-input" placeholder="Filtrar por placa o ruta..." style="max-width: 260px;">
+            </div>
+
+            <div class="fleet-table-wrapper" style="max-height: 480px; overflow-y: auto;">
+              <table class="fleet-table">
+                <thead>
+                  <tr>
+                    <th>Placa</th>
+                    <th>Ruta</th>
+                    <th>Padrón</th>
+                    <th>Odometría (km)</th>
+                    <th>Horas Motor</th>
+                    <th>Tramas ATU</th>
+                    <th>ITE %</th>
+                    <th>Silencios</th>
+                    <th>Vel. Máx.</th>
+                  </tr>
+                </thead>
+                <tbody id="kpi-table-body">
+                  <tr>
+                    <td colspan="9" style="text-align: center; color: var(--text-dim); padding: 2rem;">Cargando métricas de unidades...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Columna Derecha: Alertas de Operación -->
+          <div class="kpis-alerts-section">
+            <div class="kpis-section-header">
+              <h3 style="font-size: 1rem; margin: 0;">🚨 Alertas Recientes</h3>
+              <span class="badge-gps-ok" id="kpi-alerts-count">0 eventos</span>
+            </div>
+
+            <div class="kpi-alerts-feed" id="kpi-alerts-feed">
+              <div style="text-align: center; color: var(--text-dim); padding: 2rem; font-size: 0.85rem;">
+                No se registran alertas operacionales hoy.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- PESTAÑA 2: GESTIÓN DE FLOTA Y ASIGNACIÓN DE GPS -->
