@@ -90,7 +90,7 @@
           <line x1="8" y1="2" x2="8" y2="18"></line>
           <line x1="16" y1="6" x2="16" y2="22"></line>
         </svg>
-        <span>🗺️ Mapa en Vivo</span>
+        <span>Mapa en Vivo</span>
       </button>
 
       <button class="nav-tab-btn" data-target="view-kpis">
@@ -99,7 +99,7 @@
           <line x1="12" y1="20" x2="12" y2="4"></line>
           <line x1="6" y1="20" x2="6" y2="14"></line>
         </svg>
-        <span>📊 Métricas & KPIs</span>
+        <span>Métricas & KPIs</span>
       </button>
 
       <button class="nav-tab-btn" data-target="view-fleet">
@@ -109,7 +109,7 @@
           <circle cx="5.5" cy="18.5" r="2.5"></circle>
           <circle cx="18.5" cy="18.5" r="2.5"></circle>
         </svg>
-        <span>🚍 Flota y Asignación GPS</span>
+        <span>Flota y Asignación GPS</span>
       </button>
 
       <button class="nav-tab-btn" data-target="view-gtfs">
@@ -118,7 +118,7 @@
           <line x1="2" y1="12" x2="22" y2="12"></line>
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
         </svg>
-        <span>🗺️ Diseñador GTFS</span>
+        <span>Diseñador GTFS</span>
       </button>
 
       <button class="nav-tab-btn" data-target="view-testing">
@@ -128,7 +128,7 @@
           <line x1="12" y1="18" x2="12" y2="12"></line>
           <line x1="9" y1="15" x2="15" y2="15"></line>
         </svg>
-        <span>🧪 Banco de Pruebas ATU</span>
+        <span>Banco de Pruebas ATU</span>
       </button>
     </div>
   </nav>
@@ -553,10 +553,10 @@
               <!-- Selector de Modo de Edición -->
               <div class="gtfs-mode-selector">
                 <button class="gtfs-mode-btn active" id="btn-mode-shapes">
-                  <span>📍 Trazar Recorrido (Shapes)</span>
+                  <span>📍 Trazar Recorrido</span>
                 </button>
                 <button class="gtfs-mode-btn" id="btn-mode-stops">
-                  <span>🚏 Colocar Paraderos (Stops)</span>
+                  <span>🚏 Colocar Paraderos</span>
                 </button>
               </div>
 
@@ -712,7 +712,7 @@
             <!-- 1. Empresa / Operador -->
             <div class="testing-card">
               <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>🏢 Empresa Operadora (agency.txt)</span>
+                <span>🏢 Empresa Operadora</span>
               </div>
 
               <!-- Vista Resumen de Empresa (cuando ya existe) -->
@@ -776,7 +776,7 @@
             <!-- 2. Catálogo de Rutas -->
             <div class="testing-card">
               <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>🚍 Rutas ATU (routes.txt)</span>
+                <span>🚍 Rutas del Servicio ATU</span>
                 <button type="button" class="btn btn-primary" id="btn-show-add-route" style="padding: 3px 10px; font-size: 0.75rem;">
                   ➕ Nueva Ruta
                 </button>
@@ -815,11 +815,11 @@
               <div id="gtfs-routes-list" class="gtfs-items-container"></div>
             </div>
 
-            <!-- 3. Plantillas de Viaje (trips.txt) -->
+            <!-- 3. Plantillas de Viaje -->
             <div class="testing-card" style="grid-column: 1 / -1;">
               <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                  <span>🔄 Plantillas de Viaje Ida y Vuelta (trips.txt)</span>
+                  <span>🔄 Plantillas de Viaje (Ida y Vuelta)</span>
                   <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
                     Vincula el código de ruta con el trazo geométrico y el sentido de viaje
                   </div>
@@ -836,7 +836,7 @@
                 </div>
                 <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
                   <div class="form-field" style="flex: 1; min-width: 140px;">
-                    <label>Trip ID</label>
+                    <label>Identificador del Viaje</label>
                     <input type="text" id="trip-id" required placeholder="ej. IO33B_IDA_PATTERN" style="text-transform: uppercase;">
                   </div>
                   <div class="form-field" style="flex: 1; min-width: 120px;">
@@ -851,11 +851,11 @@
                     </select>
                   </div>
                   <div class="form-field" style="flex: 1; min-width: 140px;">
-                    <label>Trazo Geométrico (Shape)</label>
+                    <label>Trazo Geométrico</label>
                     <select id="trip-shape-select"></select>
                   </div>
                   <div class="form-field" style="flex: 2; min-width: 180px;">
-                    <label>Destino en Letrero (Headsign)</label>
+                    <label>Destino en Letrero</label>
                     <input type="text" id="trip-headsign" placeholder="ej. Hacia Villa El Salvador">
                   </div>
                   <div style="display: flex; gap: 0.4rem;">
@@ -875,9 +875,9 @@
           <div class="testing-card" style="max-width: 900px; margin: 0 auto; width: 100%;">
             <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
               <div>
-                <span>⏱️ Programación de Intervalos de Despacho (frequencies.txt)</span>
+                <span>⏱️ Programación de Intervalos de Despacho</span>
                 <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
-                  En Lima, el servicio opera por intervalos de frecuencia (headway) según la franja horaria
+                  En Lima, el servicio opera por intervalos de frecuencia según la franja horaria
                 </div>
               </div>
               <button type="button" class="btn btn-primary" id="btn-show-add-freq" style="padding: 4px 12px; font-size: 0.75rem;">

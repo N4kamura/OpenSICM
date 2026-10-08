@@ -2024,7 +2024,7 @@
           });
           const data = await res.json();
           if (data.success) {
-            alert('✅ Datos de empresa (agency.txt) guardados en SQLite.');
+            alert('✅ Datos de empresa guardados en SQLite.');
             await renderAgency();
           } else {
             alert(`❌ Error: ${data.error}`);
@@ -2297,7 +2297,7 @@
                   <strong style="color: #38bdf8;">${t.trip_id}</strong>
                   <span class="bus-ruta-badge">${t.route_id}</span>
                   <span style="font-size: 0.72rem; color: var(--text-muted);">${dirLabel}</span>
-                  <span style="font-size: 0.72rem; color: #34d399;">Shape: ${t.shape_id || 'S/T'}</span>
+                  <span style="font-size: 0.72rem; color: #34d399;">Trazo: ${t.shape_id || 'S/T'}</span>
                   ${t.trip_headsign ? `<span style="font-size: 0.72rem; color: var(--text-dim);">[${t.trip_headsign}]</span>` : ''}
                 </div>
               </div>
