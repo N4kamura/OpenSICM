@@ -973,14 +973,16 @@ body {
 
 .form-group-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
 }
 
 .form-field {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .form-field label {
@@ -991,6 +993,9 @@ body {
 }
 
 .form-field input, .form-field select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--bg-main);
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -1000,6 +1005,15 @@ body {
   outline: none;
 }
 .form-field input:focus, .form-field select:focus { border-color: #38bdf8; }
+
+.form-field input[type="number"] {
+  -moz-appearance: textfield;
+}
+.form-field input[type="number"]::-webkit-outer-spin-button,
+.form-field input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 
 .quick-locations {
   display: flex;
@@ -1388,6 +1402,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .gtfs-mode-selector {

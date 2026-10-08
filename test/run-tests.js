@@ -321,9 +321,14 @@ async function runTests() {
   });
 
   test('gtfsStore.exportCsv: genera archivos estándar GTFS en formato CSV', () => {
+    gtfsStore.saveShape('TEST_CSV_SHAPE', [
+      { lat: -12.083812, lon: -76.971038 },
+      { lat: -12.085500, lon: -76.974500 }
+    ]);
     const csvShapes = gtfsStore.exportCsv('shapes.txt');
     assert.ok(csvShapes.includes('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence'));
-    assert.ok(csvShapes.includes('IO33B_IDA'));
+    assert.ok(csvShapes.includes('TEST_CSV_SHAPE'));
+    gtfsStore.deleteShape('TEST_CSV_SHAPE');
 
     const csvStops = gtfsStore.exportCsv('stops.txt');
     assert.ok(csvStops.includes('stop_id,stop_name,stop_lat,stop_lon,location_type'));
