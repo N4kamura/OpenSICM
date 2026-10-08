@@ -567,11 +567,16 @@
                     <label style="margin: 0;">Seleccionar Trazo</label>
                     <span class="kpi-badge badge-ok" id="gtfs-shape-mode-badge">👁️ VISUALIZADOR</span>
                   </div>
-                  <select id="gtfs-shape-select" style="width: 100%;">
-                    <option value="IO33B_IDA">IO33B_IDA (Ida)</option>
-                    <option value="IO33B_VUELTA">IO33B_VUELTA (Vuelta)</option>
-                  </select>
-                  <input type="text" id="gtfs-shape-new-input" placeholder="Nombre nuevo trazo (ej. CR42_IDA)" style="display: none; margin-top: 0.4rem; text-transform: uppercase;">
+                  <div id="shape-selector-container">
+                    <select id="gtfs-shape-select" style="width: 100%;">
+                      <option value="IO33B_IDA">IO33B_IDA (Ida)</option>
+                      <option value="IO33B_VUELTA">IO33B_VUELTA (Vuelta)</option>
+                    </select>
+                  </div>
+                  <div id="shape-name-edit-container" style="display: none;">
+                    <label style="font-size: 0.72rem; color: #38bdf8; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 0.25rem;">Nombre / Identificador del Trazo</label>
+                    <input type="text" id="gtfs-shape-name-input" placeholder="ej. IO33B_IDA" style="text-transform: uppercase;">
+                  </div>
                 </div>
 
                 <!-- Botones de Acción en Modo Visualizador -->
@@ -654,11 +659,28 @@
 
               <!-- PANEL MODO 2: STOPS -->
               <div id="gtfs-stops-panel" style="display: none;">
-                <div style="font-size: 0.78rem; color: #38bdf8; margin-bottom: 0.5rem;">
-                  📍 Haga clic en el mapa para colocar un paradero o terminal.
+                <!-- Encabezado con Badge de Modo -->
+                <div class="form-field">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label style="margin: 0;">Paraderos de la Red</label>
+                    <span class="kpi-badge badge-ok" id="gtfs-stop-mode-badge">👁️ VISUALIZADOR</span>
+                  </div>
                 </div>
 
-                <form id="form-save-stop" style="display: flex; flex-direction: column; gap: 0.6rem;">
+                <!-- Botones de Acción en Modo Visualizador -->
+                <div id="stop-actions-viewer" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem;">
+                  <button type="button" class="btn btn-primary" id="btn-action-add-stop" style="justify-content: center; font-size: 0.78rem;">
+                    ➕ Nuevo Paradero
+                  </button>
+                </div>
+
+                <!-- Formulario de Paradero (oculto por defecto en Modo Visualizador) -->
+                <form id="form-save-stop" style="display: none; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem;">
+                  <input type="hidden" id="gtfs-stop-old-id" value="">
+                  <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8;" id="stop-form-title">
+                    ➕ Nuevo Paradero
+                  </div>
+
                   <div class="form-field">
                     <label>ID Paradero</label>
                     <input type="text" id="gtfs-stop-id" required placeholder="ej. PAR_JAVIER_PRADO" style="text-transform: uppercase;">
@@ -685,10 +707,24 @@
                     </div>
                   </div>
 
-                  <button type="button" class="btn btn-primary" id="btn-save-stop-sql" style="justify-content: center;">
-                    💾 Guardar Paradero en SQLite
-                  </button>
+                  <div style="font-size: 0.72rem; color: #38bdf8;">
+                    📍 Haga clic en el mapa para ubicar o reubicar las coordenadas.
+                  </div>
+
+                  <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+                    <button type="button" class="btn btn-primary" id="btn-save-stop-sql" style="flex: 1; justify-content: center;">
+                      💾 Guardar Paradero
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-stop-edit" style="justify-content: center;">
+                      ❌ Cancelar
+                    </button>
+                  </div>
                 </form>
+
+                <!-- Instrucciones en Modo Visualizador -->
+                <div class="gtfs-instructions" id="gtfs-stop-instructions" style="margin-top: 0.5rem;">
+                  💡 <strong>Modo Visualizador:</strong> Los paraderos existentes se muestran en el mapa. Haga clic en un paradero de la lista para ubicarlo o editarlo. Use <em>"➕ Nuevo Paradero"</em> para habilitar la colocación en el mapa.
+                </div>
 
                 <div style="margin-top: 0.8rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
                   Paraderos Guardados (<span id="gtfs-stops-count">0</span>)

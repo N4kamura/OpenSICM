@@ -558,8 +558,25 @@ const server = http.createServer((req, res) => {
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { shape_id, points } = JSON.parse(body);
-        const result = gtfsStore.saveShape(shape_id, points);
+        const { shape_id, points, old_shape_id } = JSON.parse(body);
+        const result = gtfsStore.saveShape(shape_id, points, old_shape_id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/gtfs/shapes/rename') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { old_shape_id, new_shape_id } = JSON.parse(body);
+        const result = gtfsStore.renameShape(old_shape_id, new_shape_id);
         res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (e) {

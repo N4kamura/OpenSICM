@@ -1172,6 +1172,11 @@
   let gtfsInitialized = false;
   let gtfsCurrentMode = 'shapes'; // 'shapes' | 'stops'
   let isDrawingShape = false;
+  let editingOldShapeId = null;
+  let isEditingStop = false;
+  let editingOldStopId = null;
+  let enterStopEditorMode = null;
+  let exitStopEditorMode = null;
   let currentShapePoints = [];
   let shapePolyline = null;
   let referenceShapePolyline = null;
@@ -1232,8 +1237,9 @@
         currentShapePoints.push(pt);
         renderShapePolylineAndStats();
       } else if (gtfsCurrentMode === 'stops') {
-        const lat = e.latlng.lat.toFixed(6);
-        const lon = e.latlng.lng.toFixed(6);
+        if (!isEditingStop) return; // En modo visualizador NO se colocan marcadores
+        const lat = parseFloat(e.latlng.lat.toFixed(6));
+        const lon = parseFloat(e.latlng.lng.toFixed(6));
         const elLat = document.getElementById('gtfs-stop-lat');
         const elLon = document.getElementById('gtfs-stop-lon');
         if (elLat) elLat.value = lat;
@@ -1293,6 +1299,9 @@
         btnModeStops.classList.remove('active');
         if (panelShapes) panelShapes.style.display = 'block';
         if (panelStops) panelStops.style.display = 'none';
+        if (isEditingStop && typeof exitStopEditorMode === 'function') {
+          exitStopEditorMode();
+        }
         if (tempStopMarker) {
           gtfsMap.removeLayer(tempStopMarker);
           tempStopMarker = null;
@@ -1306,17 +1315,23 @@
         if (panelStops) panelStops.style.display = 'block';
         if (panelShapes) panelShapes.style.display = 'none';
         if (isDrawingShape) exitShapeEditorMode();
+        if (typeof exitStopEditorMode === 'function') {
+          exitStopEditorMode();
+        }
       });
     }
 
-    // Funciones de control de Modo Visualizador vs Edición
+    // Funciones de control de Modo Visualizador vs Edición para Trazos
     function enterShapeEditorMode(isNew = false) {
       isDrawingShape = true;
       const badge = document.getElementById('gtfs-shape-mode-badge');
       const viewerActions = document.getElementById('shape-actions-viewer');
       const editorControls = document.getElementById('shape-editor-controls');
       const instructions = document.getElementById('gtfs-shape-instructions');
-      const inputNew = document.getElementById('gtfs-shape-new-input');
+      const selContainer = document.getElementById('shape-selector-container');
+      const nameContainer = document.getElementById('shape-name-edit-container');
+      const nameInput = document.getElementById('gtfs-shape-name-input');
+      const shapeSelect = document.getElementById('gtfs-shape-select');
 
       if (badge) {
         badge.className = 'kpi-badge badge-warn';
@@ -1324,32 +1339,44 @@
       }
       if (viewerActions) viewerActions.style.display = 'none';
       if (editorControls) editorControls.style.display = 'flex';
-      if (instructions) {
-        instructions.innerHTML = '✏️ <strong>Modo Edición:</strong> Haga clics en el mapa para trazar o extender puntos. Use <em>"Guardar"</em> al finalizar o <em>"Salir / Cancelar"</em> para descartar.';
-      }
+      if (selContainer) selContainer.style.display = 'none';
+      if (nameContainer) nameContainer.style.display = 'block';
 
       if (isNew) {
-        if (inputNew) {
-          inputNew.style.display = 'block';
+        editingOldShapeId = null;
+        if (instructions) {
+          instructions.innerHTML = '➕ <strong>Nuevo Trazo:</strong> Escriba el nombre del trazo y haga clics en el mapa para trazarlo. Use <em>"Guardar"</em> al finalizar o <em>"Salir"</em> para cancelar.';
+        }
+        if (nameInput) {
           const defaultRoute = (allRoutes && allRoutes[0]?.route_short_name) || 'IO33B';
           const dirSuffix = currentShapeDir === 0 ? '_IDA' : '_VUELTA';
-          inputNew.value = `${defaultRoute}${dirSuffix}`;
-          inputNew.focus();
+          nameInput.value = `${defaultRoute}${dirSuffix}`;
+          nameInput.focus();
         }
         currentShapePoints = [];
         renderShapePolylineAndStats();
       } else {
-        if (inputNew) inputNew.style.display = 'none';
+        const curId = shapeSelect ? shapeSelect.value : '';
+        editingOldShapeId = curId;
+        if (instructions) {
+          instructions.innerHTML = '✏️ <strong>Modificando Trazo:</strong> Puede cambiar el nombre del trazo arriba y/o hacer clics en el mapa para extenderlo o modificarlo. Pulse <em>"Guardar"</em> al finalizar.';
+        }
+        if (nameInput) {
+          nameInput.value = curId;
+          nameInput.focus();
+        }
       }
     }
 
     async function exitShapeEditorMode() {
       isDrawingShape = false;
+      editingOldShapeId = null;
       const badge = document.getElementById('gtfs-shape-mode-badge');
       const viewerActions = document.getElementById('shape-actions-viewer');
       const editorControls = document.getElementById('shape-editor-controls');
       const instructions = document.getElementById('gtfs-shape-instructions');
-      const inputNew = document.getElementById('gtfs-shape-new-input');
+      const selContainer = document.getElementById('shape-selector-container');
+      const nameContainer = document.getElementById('shape-name-edit-container');
       const shapeSelect = document.getElementById('gtfs-shape-select');
 
       if (badge) {
@@ -1358,7 +1385,8 @@
       }
       if (viewerActions) viewerActions.style.display = 'flex';
       if (editorControls) editorControls.style.display = 'none';
-      if (inputNew) inputNew.style.display = 'none';
+      if (selContainer) selContainer.style.display = 'block';
+      if (nameContainer) nameContainer.style.display = 'none';
       if (instructions) {
         instructions.innerHTML = '💡 <strong>Modo Visualizador:</strong> El mapa está en modo lectura para inspeccionar trazos sin modificarlos por accidente. Use <em>"➕ Nuevo Trazo"</em> o <em>"✏️ Modificar"</em> para habilitar la edición.';
       }
@@ -1367,6 +1395,104 @@
         await loadSelectedShape(shapeSelect.value);
       }
     }
+
+    // Funciones de control de Modo Visualizador vs Edición para Paraderos
+    enterStopEditorMode = function(isNew = true, stopData = null) {
+      isEditingStop = true;
+      const badge = document.getElementById('gtfs-stop-mode-badge');
+      const viewerActions = document.getElementById('stop-actions-viewer');
+      const form = document.getElementById('form-save-stop');
+      const title = document.getElementById('stop-form-title');
+      const instructions = document.getElementById('gtfs-stop-instructions');
+      const idInput = document.getElementById('gtfs-stop-id');
+      const oldIdInput = document.getElementById('gtfs-stop-old-id');
+      const nameInput = document.getElementById('gtfs-stop-name');
+      const typeSelect = document.getElementById('gtfs-stop-type');
+      const latInput = document.getElementById('gtfs-stop-lat');
+      const lonInput = document.getElementById('gtfs-stop-lon');
+
+      if (badge) {
+        badge.className = 'kpi-badge badge-warn';
+        badge.textContent = '✏️ MODO EDICIÓN ACTIVO';
+      }
+      if (viewerActions) viewerActions.style.display = 'none';
+      if (form) form.style.display = 'flex';
+
+      if (isNew) {
+        editingOldStopId = null;
+        if (title) title.textContent = '➕ Nuevo Paradero';
+        if (instructions) {
+          instructions.innerHTML = '📍 <strong>Modo Edición:</strong> Haga clic en el mapa para ubicar las coordenadas del paradero, complete su nombre y pulse <em>"Guardar"</em>.';
+        }
+        if (oldIdInput) oldIdInput.value = '';
+        if (idInput) {
+          idInput.value = 'PAR_' + Math.floor(1000 + Math.random() * 9000);
+          idInput.readOnly = false;
+        }
+        if (nameInput) nameInput.value = '';
+        if (typeSelect) typeSelect.value = '0';
+        if (latInput) latInput.value = '';
+        if (lonInput) lonInput.value = '';
+        if (tempStopMarker) {
+          gtfsMap.removeLayer(tempStopMarker);
+          tempStopMarker = null;
+        }
+      } else if (stopData) {
+        editingOldStopId = stopData.stop_id;
+        if (title) title.textContent = `✏️ Modificar Paradero [${stopData.stop_id}]`;
+        if (instructions) {
+          instructions.innerHTML = '✏️ <strong>Modificando Paradero:</strong> Puede editar el nombre, tipo o hacer clic en el mapa para reubicarlo. Pulse <em>"Guardar"</em> al finalizar.';
+        }
+        if (oldIdInput) oldIdInput.value = stopData.stop_id;
+        if (idInput) {
+          idInput.value = stopData.stop_id;
+          idInput.readOnly = false;
+        }
+        if (nameInput) nameInput.value = stopData.stop_name || '';
+        if (typeSelect) typeSelect.value = String(stopData.location_type !== undefined ? stopData.location_type : 0);
+        if (latInput) latInput.value = stopData.stop_lat;
+        if (lonInput) lonInput.value = stopData.stop_lon;
+
+        if (gtfsMap) {
+          gtfsMap.setView([stopData.stop_lat, stopData.stop_lon], 16);
+          if (tempStopMarker) {
+            tempStopMarker.setLatLng([stopData.stop_lat, stopData.stop_lon]);
+          } else {
+            tempStopMarker = L.circleMarker([stopData.stop_lat, stopData.stop_lon], {
+              radius: 9,
+              color: '#ec4899',
+              fillColor: '#f43f5e',
+              fillOpacity: 0.9,
+              dashArray: '3, 3'
+            }).addTo(gtfsMap);
+          }
+        }
+      }
+    };
+
+    exitStopEditorMode = function() {
+      isEditingStop = false;
+      editingOldStopId = null;
+      const badge = document.getElementById('gtfs-stop-mode-badge');
+      const viewerActions = document.getElementById('stop-actions-viewer');
+      const form = document.getElementById('form-save-stop');
+      const instructions = document.getElementById('gtfs-stop-instructions');
+
+      if (badge) {
+        badge.className = 'kpi-badge badge-ok';
+        badge.textContent = '👁️ VISUALIZADOR';
+      }
+      if (viewerActions) viewerActions.style.display = 'flex';
+      if (form) form.style.display = 'none';
+      if (instructions) {
+        instructions.innerHTML = '💡 <strong>Modo Visualizador:</strong> Los paraderos existentes se muestran en el mapa. Haga clic en un paradero de la lista para ubicarlo o editarlo. Use <em>"➕ Nuevo Paradero"</em> para habilitar la colocación en el mapa.';
+      }
+
+      if (tempStopMarker) {
+        gtfsMap.removeLayer(tempStopMarker);
+        tempStopMarker = null;
+      }
+    };
 
     // Botones de Acción del Trazo
     const btnActionAddShape = document.getElementById('btn-action-add-shape');
@@ -1573,14 +1699,12 @@
     const btnSaveShape = document.getElementById('btn-save-shape-sql');
     if (btnSaveShape) {
       btnSaveShape.addEventListener('click', async () => {
-        const sel = document.getElementById('gtfs-shape-select');
-        const inputNew = document.getElementById('gtfs-shape-new-input');
-        let shapeId = inputNew && inputNew.style.display !== 'none'
-          ? inputNew.value.trim().toUpperCase()
-          : (sel ? sel.value : '');
+        const nameInput = document.getElementById('gtfs-shape-name-input');
+        let shapeId = nameInput ? nameInput.value.trim().toUpperCase() : '';
 
         if (!shapeId) {
-          alert('Por favor ingrese o seleccione un ID de trazo (ej. IO33B_IDA)');
+          alert('Por favor ingrese un nombre para el trazo (ej. IO33B_IDA)');
+          if (nameInput) nameInput.focus();
           return;
         }
 
@@ -1590,14 +1714,26 @@
         }
 
         try {
+          const payload = {
+            shape_id: shapeId,
+            points: currentShapePoints
+          };
+          if (editingOldShapeId && editingOldShapeId !== shapeId) {
+            payload.old_shape_id = editingOldShapeId;
+          }
+
           const res = await fetch('/api/gtfs/shapes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ shape_id: shapeId, points: currentShapePoints })
+            body: JSON.stringify(payload)
           });
           const data = await res.json();
           if (data.success) {
-            alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos.`);
+            if (payload.old_shape_id) {
+              alert(`✅ Trazo guardado exitosamente.\nSe renombró de "${payload.old_shape_id}" a "${shapeId}" y se actualizaron los viajes vinculados.`);
+            } else {
+              alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos.`);
+            }
             await loadShapeList(shapeId);
             await exitShapeEditorMode();
           } else {
@@ -1620,11 +1756,32 @@
       });
     }
 
+    // Botones de control de parada (Modo Visualizador vs Edición)
+    const btnActionAddStop = document.getElementById('btn-action-add-stop');
+    const btnCancelStopEdit = document.getElementById('btn-cancel-stop-edit');
+
+    if (btnActionAddStop) {
+      btnActionAddStop.addEventListener('click', () => {
+        if (typeof enterStopEditorMode === 'function') {
+          enterStopEditorMode(true);
+        }
+      });
+    }
+
+    if (btnCancelStopEdit) {
+      btnCancelStopEdit.addEventListener('click', () => {
+        if (typeof exitStopEditorMode === 'function') {
+          exitStopEditorMode();
+        }
+      });
+    }
+
     // Guardar Paradero en SQLite
     const btnSaveStop = document.getElementById('btn-save-stop-sql');
     if (btnSaveStop) {
       btnSaveStop.addEventListener('click', async () => {
         const stopId = document.getElementById('gtfs-stop-id')?.value.trim().toUpperCase();
+        const oldStopId = document.getElementById('gtfs-stop-old-id')?.value.trim().toUpperCase() || editingOldStopId;
         const stopName = document.getElementById('gtfs-stop-name')?.value.trim();
         const stopType = parseInt(document.getElementById('gtfs-stop-type')?.value || '0', 10);
         const stopLat = parseFloat(document.getElementById('gtfs-stop-lat')?.value);
@@ -1636,27 +1793,28 @@
         }
 
         try {
+          const payload = {
+            stop_id: stopId,
+            stop_name: stopName,
+            stop_lat: stopLat,
+            stop_lon: stopLon,
+            location_type: stopType
+          };
+          if (oldStopId && oldStopId !== stopId) {
+            payload.old_stop_id = oldStopId;
+          }
+
           const res = await fetch('/api/gtfs/stops', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              stop_id: stopId,
-              stop_name: stopName,
-              stop_lat: stopLat,
-              stop_lon: stopLon,
-              location_type: stopType
-            })
+            body: JSON.stringify(payload)
           });
           const data = await res.json();
           if (data.success) {
-            if (tempStopMarker) {
-              gtfsMap.removeLayer(tempStopMarker);
-              tempStopMarker = null;
+            alert('✅ Paradero guardado exitosamente en SQLite.');
+            if (typeof exitStopEditorMode === 'function') {
+              exitStopEditorMode();
             }
-            if (document.getElementById('gtfs-stop-id')) document.getElementById('gtfs-stop-id').value = '';
-            if (document.getElementById('gtfs-stop-name')) document.getElementById('gtfs-stop-name').value = '';
-            if (document.getElementById('gtfs-stop-lat')) document.getElementById('gtfs-stop-lat').value = '';
-            if (document.getElementById('gtfs-stop-lon')) document.getElementById('gtfs-stop-lon').value = '';
             await loadStops();
           } else {
             alert(`❌ Error al guardar paradero: ${data.error}`);
@@ -1855,6 +2013,11 @@
               <div style="font-size: 0.85rem; color: #38bdf8; font-weight: 600;">${s.stop_name}</div>
               <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">ID: <code>${s.stop_id}</code></div>
               <div style="font-size: 0.7rem; color: var(--text-dim);">Lat: ${s.stop_lat}, Lon: ${s.stop_lon}</div>
+              <div style="margin-top: 6px;">
+                <button type="button" class="btn btn-secondary" onclick="window.editGtfsStop('${s.stop_id}')" style="padding: 2px 8px; font-size: 0.72rem; color: #38bdf8; border-color: #38bdf8; cursor: pointer;">
+                  ✏️ Modificar
+                </button>
+              </div>
             </div>
           `);
         });
@@ -1883,9 +2046,14 @@
                   <code>${s.stop_id}</code> | ${s.stop_lat.toFixed(4)}, ${s.stop_lon.toFixed(4)}
                 </div>
               </div>
-              <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsStop('${s.stop_id}')" title="Eliminar Paradero">
-                🗑️
-              </button>
+              <div style="display: flex; gap: 0.25rem; align-items: center;">
+                <button class="tbl-action-btn" onclick="window.editGtfsStop('${s.stop_id}')" title="Modificar Paradero" style="font-size: 0.72rem; padding: 2px 6px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+                  ✏️
+                </button>
+                <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsStop('${s.stop_id}')" title="Eliminar Paradero">
+                  🗑️
+                </button>
+              </div>
             </div>
           `;
         }).join('');
@@ -1898,6 +2066,18 @@
   window.focusGtfsStop = function(lat, lon) {
     if (gtfsMap) {
       gtfsMap.setView([lat, lon], 16);
+    }
+  };
+
+  window.editGtfsStop = function(stopId) {
+    const stop = (allStops || []).find(s => s.stop_id === stopId);
+    if (!stop) return;
+    if (gtfsCurrentMode !== 'stops') {
+      const btnModeStops = document.getElementById('btn-mode-stops');
+      if (btnModeStops) btnModeStops.click();
+    }
+    if (typeof enterStopEditorMode === 'function') {
+      enterStopEditorMode(false, stop);
     }
   };
 

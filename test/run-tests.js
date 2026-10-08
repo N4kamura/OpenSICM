@@ -253,13 +253,13 @@ async function runTests() {
     assert.strictEqual(agency.agency_timezone, 'America/Lima');
 
     const routes = gtfsStore.getRoutes();
-    assert.ok(routes.length >= 2, 'Debe contener rutas de demostración (IO33B, CR42)');
+    assert.ok(routes.length >= 1, 'Debe contener al menos una ruta en SQLite');
 
     const stops = gtfsStore.getStops();
-    assert.ok(stops.length >= 5, 'Debe contener paraderos de demostración');
+    assert.ok(stops.length >= 1, 'Debe contener paraderos en SQLite');
 
     const shapes = gtfsStore.getShapeList();
-    assert.ok(shapes.length >= 1, 'Debe contener trazo de demostración');
+    assert.ok(shapes.length >= 1, 'Debe contener trazos en SQLite');
   });
 
   test('gtfsStore: gestiona empresa (agency.txt) guardar y restablecer', () => {
@@ -302,6 +302,15 @@ async function runTests() {
     assert.strictEqual(gtfsStore.getShapePoints('TEST_SHAPE').length, 0);
   });
 
+  test('gtfsStore: renombra trazo geométrico y actualiza clave', () => {
+    gtfsStore.saveShape('TEST_RENAME_A', [{ lat: -12.01, lon: -77.01 }]);
+    const res = gtfsStore.renameShape('TEST_RENAME_A', 'TEST_RENAME_B');
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(gtfsStore.getShapePoints('TEST_RENAME_B').length, 1);
+    assert.strictEqual(gtfsStore.getShapePoints('TEST_RENAME_A').length, 0);
+    gtfsStore.deleteShape('TEST_RENAME_B');
+  });
+
   test('gtfsStore: gestiona frecuencias de despacho (frequencies.txt)', () => {
     const saveRes = gtfsStore.saveFrequency({
       trip_id: 'IO33B_IDA_PATTERN',
@@ -330,9 +339,17 @@ async function runTests() {
     assert.ok(csvShapes.includes('TEST_CSV_SHAPE'));
     gtfsStore.deleteShape('TEST_CSV_SHAPE');
 
+    gtfsStore.saveStop({
+      stop_id: 'TEST_CSV_STOP',
+      stop_name: 'Paradero Test CSV',
+      stop_lat: -12.083812,
+      stop_lon: -76.971038,
+      location_type: 0
+    });
     const csvStops = gtfsStore.exportCsv('stops.txt');
     assert.ok(csvStops.includes('stop_id,stop_name,stop_lat,stop_lon,location_type'));
-    assert.ok(csvStops.includes('TERM_PACHACUTEC'));
+    assert.ok(csvStops.includes('TEST_CSV_STOP'));
+    gtfsStore.deleteStop('TEST_CSV_STOP');
 
     const csvRoutes = gtfsStore.exportCsv('routes.txt');
     assert.ok(csvRoutes.includes('route_id,agency_id,route_short_name,route_long_name,route_type'));

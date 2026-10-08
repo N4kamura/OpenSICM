@@ -188,6 +188,7 @@ class GtfsStore {
 
   saveStop(data) {
     const stopId = (data.stop_id || '').trim().toUpperCase();
+    const oldStopId = data.old_stop_id ? data.old_stop_id.trim().toUpperCase() : null;
     const name = (data.stop_name || '').trim();
     const lat = parseFloat(data.stop_lat);
     const lon = parseFloat(data.stop_lon);
@@ -197,6 +198,9 @@ class GtfsStore {
     if (isNaN(lat) || isNaN(lon)) return { success: false, error: 'Coordenadas latitud y longitud inválidas' };
 
     try {
+      if (oldStopId && oldStopId !== stopId) {
+        db.prepare('DELETE FROM gtfs_stops WHERE stop_id = ?').run(oldStopId);
+      }
       db.prepare(`
         INSERT INTO gtfs_stops (stop_id, stop_name, stop_lat, stop_lon, location_type)
         VALUES (?, ?, ?, ?, ?)
@@ -257,14 +261,21 @@ class GtfsStore {
    * @param {string} shapeId 
    * @param {Array<{lat: number, lon: number}>} points 
    */
-  saveShape(shapeId, points) {
+  saveShape(shapeId, points, oldShapeId = null) {
     const cleanId = (shapeId || '').trim().toUpperCase();
+    const cleanOldId = oldShapeId ? (oldShapeId || '').trim().toUpperCase() : null;
     if (!cleanId) return { success: false, error: 'Identificador de Shape requerido (ej. IO33B_IDA)' };
     if (!Array.isArray(points) || points.length === 0) {
       return { success: false, error: 'Debe incluir al menos un punto de coordenadas' };
     }
 
     try {
+      // Si se renombró el trazo (cleanOldId !== cleanId), eliminar el anterior y migrar viajes asociados
+      if (cleanOldId && cleanOldId !== cleanId) {
+        db.prepare('DELETE FROM gtfs_shapes WHERE shape_id = ?').run(cleanOldId);
+        db.prepare('UPDATE gtfs_trips SET shape_id = ? WHERE shape_id = ?').run(cleanId, cleanOldId);
+      }
+
       // Reemplazo atómico: borrar puntos anteriores e insertar nueva secuencia
       db.prepare('DELETE FROM gtfs_shapes WHERE shape_id = ?').run(cleanId);
 
@@ -281,7 +292,21 @@ class GtfsStore {
         }
       });
 
-      return { success: true, shapeId: cleanId, totalPoints: points.length };
+      return { success: true, shapeId: cleanId, totalPoints: points.length, renamedFrom: cleanOldId };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  renameShape(oldShapeId, newShapeId) {
+    const oldId = (oldShapeId || '').trim().toUpperCase();
+    const newId = (newShapeId || '').trim().toUpperCase();
+    if (!oldId || !newId) return { success: false, error: 'Identificadores requeridos' };
+    if (oldId === newId) return { success: true, shapeId: newId };
+    try {
+      db.prepare('UPDATE gtfs_shapes SET shape_id = ? WHERE shape_id = ?').run(newId, oldId);
+      db.prepare('UPDATE gtfs_trips SET shape_id = ? WHERE shape_id = ?').run(newId, oldId);
+      return { success: true, shapeId: newId, oldShapeId: oldId };
     } catch (err) {
       return { success: false, error: err.message };
     }
