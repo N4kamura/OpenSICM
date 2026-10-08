@@ -691,6 +691,20 @@
                   </div>
                 </div>
 
+                <!-- Selector de Recorrido / Trazo Activo para colocar Paraderos -->
+                <div class="form-field" style="margin-bottom: 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.6rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label style="margin: 0; color: #38bdf8; font-weight: 600;">Trazo Activo de la Ruta</label>
+                    <span class="kpi-badge badge-ok" id="stop-active-shape-badge" style="font-size: 0.65rem;">Cargando...</span>
+                  </div>
+                  <select id="gtfs-stop-shape-select" style="width: 100%;">
+                    <option value="">-- Seleccionar Trazo para colocar paraderos --</option>
+                  </select>
+                  <div id="stop-active-shape-info" style="font-size: 0.72rem; color: var(--text-dim); margin-top: 0.35rem; line-height: 1.3;">
+                    Los paraderos se colocarán ajustados sobre la línea del trazo seleccionado.
+                  </div>
+                </div>
+
                 <!-- Botones de Acción en Modo Visualizador -->
                 <div id="stop-actions-viewer" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem;">
                   <button type="button" class="btn btn-primary" id="btn-action-add-stop" style="justify-content: center; font-size: 0.78rem;">
@@ -706,8 +720,8 @@
                   </div>
 
                   <div class="form-field">
-                    <label>ID Paradero</label>
-                    <input type="text" id="gtfs-stop-id" required placeholder="ej. PAR_JAVIER_PRADO" style="text-transform: uppercase;">
+                    <label>ID Paradero (Número Entero)</label>
+                    <input type="number" id="gtfs-stop-id" required min="1" step="1" placeholder="ej. 1">
                   </div>
                   <div class="form-field">
                     <label>Nombre del Paradero</label>
@@ -732,7 +746,7 @@
                   </div>
 
                   <div style="font-size: 0.72rem; color: #38bdf8;">
-                    📍 Haga clic en el mapa para ubicar o reubicar las coordenadas.
+                    📍 Haga clic sobre la línea del trazo para ubicar o reubicar las coordenadas.
                   </div>
 
                   <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
@@ -750,8 +764,14 @@
                   💡 <strong>Modo Visualizador:</strong> Los paraderos existentes se muestran en el mapa. Haga clic en un paradero de la lista para ubicarlo o editarlo. Use <em>"➕ Nuevo Paradero"</em> para habilitar la colocación en el mapa.
                 </div>
 
-                <div style="margin-top: 0.8rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-                  Paraderos Guardados (<span id="gtfs-stops-count">0</span>)
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.8rem; margin-bottom: 0.35rem;">
+                  <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+                    Paraderos Guardados (<span id="gtfs-stops-count">0</span>)
+                  </span>
+                  <button type="button" class="btn btn-secondary" id="btn-toggle-stops-sort" style="padding: 2px 8px; font-size: 0.7rem; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); display: flex; align-items: center; gap: 4px;" title="Alternar orden ascendente o descendente por ID">
+                    <span id="stops-sort-icon">⬆️</span>
+                    <span id="stops-sort-label">ID Asc (1→N)</span>
+                  </button>
                 </div>
                 <div class="gtfs-stops-mini-list" id="gtfs-stops-list">
                   <!-- Lista dinámica de paraderos -->

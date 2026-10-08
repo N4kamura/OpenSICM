@@ -595,6 +595,70 @@ body {
   color: #ffffff;
 }
 
+/* Popups de Paraderos GTFS con buffer y espaciado generoso */
+.gtfs-stop-popup .leaflet-popup-content-wrapper {
+  background-color: var(--bg-sidebar) !important;
+  color: var(--text-main) !important;
+  border: 1px solid var(--border-color);
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+  padding: 0 !important;
+}
+
+.gtfs-stop-popup-card {
+  padding: 14px 16px;
+  min-width: 230px;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+
+.gtfs-stop-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gtfs-stop-popup-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.3;
+}
+
+.gtfs-stop-popup-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.74rem;
+  margin-top: 4px;
+}
+
+.gtfs-stop-popup-row span {
+  color: var(--text-dim);
+}
+
+.gtfs-stop-popup-row strong {
+  color: var(--text-main);
+}
+
+.gtfs-stop-popup-actions {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  gap: 6px;
+}
+
+/* Vértices arrastrables para trazado geométrico */
+.vertex-handle-div {
+  transition: transform 0.15s ease;
+}
+.vertex-handle-div:hover {
+  transform: scale(1.35);
+}
+
 /* --- MODAL INSPECTOR DE TRAMA ATU --- */
 .modal-overlay {
   position: fixed;

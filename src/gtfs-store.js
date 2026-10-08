@@ -39,11 +39,11 @@ class GtfsStore {
           INSERT INTO gtfs_stops (stop_id, stop_name, stop_lat, stop_lon, location_type)
           VALUES (?, ?, ?, ?, ?)
         `);
-        insertStop.run('TERM_PACHACUTEC', 'Terminal Norte Pachacútec', -11.874520, -77.125400, 1);
-        insertStop.run('PAR_DOS_DE_MAYO', 'Paradero Plaza 2 de Mayo', -12.046374, -77.042793, 0);
-        insertStop.run('PAR_TREBOL_JP', 'Paradero Trébol Javier Prado', -12.083812, -76.971038, 0);
-        insertStop.run('PAR_VIA_EXPRESA', 'Paradero Vía Expresa / Canaval Moreyra', -12.091215, -77.026478, 0);
-        insertStop.run('TERM_VES', 'Terminal Sur Villa El Salvador', -12.185400, -76.994100, 1);
+        insertStop.run('1', 'Terminal Norte Pachacútec', -11.874520, -77.125400, 1);
+        insertStop.run('2', 'Paradero Plaza 2 de Mayo', -12.046374, -77.042793, 0);
+        insertStop.run('3', 'Paradero Trébol Javier Prado', -12.083812, -76.971038, 0);
+        insertStop.run('4', 'Paradero Vía Expresa / Canaval Moreyra', -12.091215, -77.026478, 0);
+        insertStop.run('5', 'Terminal Sur Villa El Salvador', -12.185400, -76.994100, 1);
       }
 
       const shapesCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_shapes').get().total;
@@ -187,27 +187,44 @@ class GtfsStore {
   // --- STOPS ---
   getStops() {
     try {
-      return db.prepare('SELECT * FROM gtfs_stops ORDER BY location_type DESC, stop_name ASC').all();
+      return db.prepare('SELECT * FROM gtfs_stops ORDER BY CAST(stop_id AS INTEGER) ASC, stop_id ASC').all();
     } catch (e) {
       return [];
     }
   }
 
   saveStop(data) {
-    const stopId = (data.stop_id || '').trim().toUpperCase();
-    const oldStopId = data.old_stop_id ? data.old_stop_id.trim().toUpperCase() : null;
+    const rawId = (data.stop_id !== undefined && data.stop_id !== null) ? String(data.stop_id).trim() : '';
+    const oldStopId = data.old_stop_id ? String(data.old_stop_id).trim() : null;
     const name = (data.stop_name || '').trim();
     const lat = parseFloat(data.stop_lat);
     const lon = parseFloat(data.stop_lon);
     const locType = parseInt(data.location_type || '0', 10);
 
-    if (!stopId || !name) return { success: false, error: 'Identificador y nombre de paradero son requeridos' };
+    if (!rawId || !name) return { success: false, error: 'Identificador y nombre de paradero son requeridos' };
+    if (!/^\d+$/.test(rawId) || parseInt(rawId, 10) <= 0) {
+      return { success: false, error: 'El ID de paradero debe ser un número entero positivo (ej. 1, 2, 3...)' };
+    }
+    const stopId = String(parseInt(rawId, 10));
+
     if (isNaN(lat) || isNaN(lon)) return { success: false, error: 'Coordenadas latitud y longitud inválidas' };
 
     try {
-      if (oldStopId && oldStopId !== stopId) {
+      if (!oldStopId) {
+        // En creación de nuevo paradero, prohibir duplicados de ID
+        const existing = db.prepare('SELECT 1 FROM gtfs_stops WHERE stop_id = ?').get(stopId);
+        if (existing) {
+          return { success: false, error: `El ID de paradero "${stopId}" ya está registrado en el sistema. Los IDs deben ser únicos.` };
+        }
+      } else if (oldStopId !== stopId) {
+        // En modificación con cambio de ID, verificar que el nuevo ID no colisione con otro
+        const existingNew = db.prepare('SELECT 1 FROM gtfs_stops WHERE stop_id = ?').get(stopId);
+        if (existingNew) {
+          return { success: false, error: `El ID de paradero "${stopId}" ya está ocupado por otro paradero.` };
+        }
         db.prepare('DELETE FROM gtfs_stops WHERE stop_id = ?').run(oldStopId);
       }
+
       db.prepare(`
         INSERT INTO gtfs_stops (stop_id, stop_name, stop_lat, stop_lon, location_type)
         VALUES (?, ?, ?, ?, ?)

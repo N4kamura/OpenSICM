@@ -1195,6 +1195,60 @@
   let allShapes = [];
   let allTrips = [];
 
+  // Trazo activo para colocación de paraderos y filtro de ordenamiento
+  let stopActiveShapeId = '';
+  let stopActiveShapePoints = [];
+  let stopActivePolyline = null;
+  let currentStopsSort = 'ASC'; // 'ASC' | 'DESC'
+  let setStopActiveShape = null;
+
+  // Función geométrica para proyectar un punto P sobre el segmento A-B
+  function projectPointOnSegment(p, a, b) {
+    const midLatRad = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+    const dx = (b.lon - a.lon) * Math.cos(midLatRad);
+    const dy = b.lat - a.lat;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) {
+      return { lat: a.lat, lon: a.lon, t: 0 };
+    }
+    const px = (p.lon - a.lon) * Math.cos(midLatRad);
+    const py = p.lat - a.lat;
+    let t = (px * dx + py * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return {
+      lat: a.lat + t * (b.lat - a.lat),
+      lon: a.lon + t * (b.lon - a.lon),
+      t: t
+    };
+  }
+
+  // Función para proyectar y ajustar (snap) un punto a la polilínea activa
+  function snapToActiveShape(latlng, points) {
+    if (!points || points.length < 2) return null;
+    let bestDist = Infinity;
+    let bestPoint = null;
+    let bestIndex = 0;
+
+    const p = { lat: latlng.lat, lon: latlng.lng };
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const proj = projectPointOnSegment(p, a, b);
+      const projLatLng = L.latLng(proj.lat, proj.lon);
+      const dist = gtfsMap.distance(latlng, projLatLng);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestPoint = proj;
+        bestIndex = i;
+      }
+    }
+    return {
+      point: bestPoint,
+      distanceMeters: bestDist,
+      segmentIndex: bestIndex
+    };
+  }
+
   function initGtfsDesigner() {
     if (gtfsInitialized) return;
     gtfsInitialized = true;
@@ -1220,6 +1274,7 @@
       lineJoin: 'round'
     }).addTo(gtfsMap);
 
+    // Trazo de referencia / guía para crear vuelta
     referenceShapePolyline = L.polyline([], {
       color: '#0284c7',
       weight: 3,
@@ -1227,9 +1282,40 @@
       dashArray: '6, 8'
     }).addTo(gtfsMap);
 
+    // Trazo activo para colocación de paraderos (con ajuste snap)
+    stopActivePolyline = L.polyline([], {
+      color: '#10b981',
+      weight: 5.5,
+      opacity: 0.9,
+      lineJoin: 'round'
+    }).addTo(gtfsMap);
+
     shapeMarkersGroup = L.layerGroup().addTo(gtfsMap);
     referenceMarkersGroup = L.layerGroup().addTo(gtfsMap);
     stopsLayerGroup = L.layerGroup().addTo(gtfsMap);
+
+    // Permitir insertar vértices haciendo clic directamente sobre la polilínea del trazo
+    shapePolyline.on('click', (e) => {
+      if (gtfsCurrentMode === 'shapes' && isDrawingShape && currentShapePoints.length >= 2) {
+        L.DomEvent.stopPropagation(e);
+        const snap = snapToActiveShape(e.latlng, currentShapePoints);
+        if (snap && snap.point) {
+          const insertIdx = snap.segmentIndex + 1;
+          currentShapePoints.splice(insertIdx, 0, {
+            lat: parseFloat(snap.point.lat.toFixed(6)),
+            lon: parseFloat(snap.point.lon.toFixed(6))
+          });
+          renderShapePolylineAndStats();
+        }
+      }
+    });
+
+    // Clic sobre el trazo activo en modo paraderos dispara la colocación ajustada
+    stopActivePolyline.on('click', (e) => {
+      if (gtfsCurrentMode === 'stops' && isEditingStop) {
+        gtfsMap.fire('click', e);
+      }
+    });
 
     // Evento de clic en mapa GTFS
     gtfsMap.on('click', (e) => {
@@ -1243,27 +1329,44 @@
         renderShapePolylineAndStats();
       } else if (gtfsCurrentMode === 'stops') {
         if (!isEditingStop) return; // En modo visualizador NO se colocan marcadores
-        const lat = parseFloat(e.latlng.lat.toFixed(6));
-        const lon = parseFloat(e.latlng.lng.toFixed(6));
+
+        // Validar que exista un trazo activo seleccionado
+        if (!stopActiveShapePoints || stopActiveShapePoints.length < 2) {
+          alert('⚠️ Por favor seleccione primero un "Trazo Activo de la Ruta" en el selector superior para colocar paraderos sobre su recorrido.');
+          return;
+        }
+
+        // Proyectar el punto del clic sobre el trazo activo y verificar tolerancia de distancia (<= 80m)
+        const snap = snapToActiveShape(e.latlng, stopActiveShapePoints);
+        if (!snap || snap.distanceMeters > 80) {
+          const distMsg = snap ? `${Math.round(snap.distanceMeters)} metros` : 'distante';
+          alert(`⚠️ El clic está a ${distMsg} del trazo activo.\n\nLos paraderos deben ubicarse obligatoriamente sobre el recorrido del trazo seleccionado (tolerancia máxima: 80 metros).`);
+          return;
+        }
+
+        // Ajustar (snap) exactamente a la línea del trazo
+        const snappedLat = parseFloat(snap.point.lat.toFixed(6));
+        const snappedLon = parseFloat(snap.point.lon.toFixed(6));
         const elLat = document.getElementById('gtfs-stop-lat');
         const elLon = document.getElementById('gtfs-stop-lon');
-        if (elLat) elLat.value = lat;
-        if (elLon) elLon.value = lon;
+        if (elLat) elLat.value = snappedLat;
+        if (elLon) elLon.value = snappedLon;
 
         const stopIdInput = document.getElementById('gtfs-stop-id');
         if (stopIdInput && !stopIdInput.value) {
-          stopIdInput.value = 'PAR_' + Math.floor(1000 + Math.random() * 9000);
+          stopIdInput.value = getNextStopId();
         }
 
+        const snappedLatLng = L.latLng(snappedLat, snappedLon);
         if (tempStopMarker) {
-          tempStopMarker.setLatLng(e.latlng);
+          tempStopMarker.setLatLng(snappedLatLng);
         } else {
-          tempStopMarker = L.circleMarker(e.latlng, {
-            radius: 8,
-            color: '#ec4899',
-            fillColor: '#f43f5e',
-            fillOpacity: 0.9,
-            dashArray: '3, 3'
+          tempStopMarker = L.circleMarker(snappedLatLng, {
+            radius: 9,
+            color: '#ffffff',
+            weight: 2.5,
+            fillColor: '#f97316',
+            fillOpacity: 0.95
           }).addTo(gtfsMap);
         }
       }
@@ -1311,6 +1414,12 @@
           gtfsMap.removeLayer(tempStopMarker);
           tempStopMarker = null;
         }
+        if (stopActivePolyline) {
+          stopActivePolyline.setLatLngs([]);
+        }
+        if (shapePolyline && currentShapePoints.length > 0) {
+          shapePolyline.setLatLngs(currentShapePoints.map(p => [p.lat, p.lon]));
+        }
       });
 
       btnModeStops.addEventListener('click', () => {
@@ -1322,6 +1431,16 @@
         if (isDrawingShape) exitShapeEditorMode();
         if (typeof exitStopEditorMode === 'function') {
           exitStopEditorMode();
+        }
+        const stopShapeSel = document.getElementById('gtfs-stop-shape-select');
+        if (stopShapeSel && stopShapeSel.value) {
+          if (typeof setStopActiveShape === 'function') {
+            setStopActiveShape(stopShapeSel.value);
+          }
+        } else {
+          if (typeof setStopActiveShape === 'function') {
+            setStopActiveShape('');
+          }
         }
       });
     }
@@ -1388,14 +1507,16 @@
         const curId = shapeSelect ? shapeSelect.value : '';
         editingOldShapeId = curId;
         if (instructions) {
-          instructions.innerHTML = '✏️ <strong>Modificando Trazo:</strong> Puede cambiar el nombre del trazo arriba y/o hacer clics en el mapa para extenderlo o modificarlo. Pulse <em>"Guardar"</em> al finalizar.';
+          instructions.innerHTML = '✏️ <strong>Modificando Trazo:</strong> Puede cambiar el nombre del trazo arriba, arrastrar vértices intermedios en el mapa o hacer clics para extenderlo. Pulse <em>"Guardar"</em> al finalizar.';
         }
         if (nameInput) {
           nameInput.value = curId;
           nameInput.focus();
         }
+        // Habilitar vértices arrastrables para los puntos existentes del trazo
+        renderShapePolylineAndStats();
         if (modeIndicator) {
-          modeIndicator.innerHTML = `⚠️ <strong>Modificando Trazo Existente: "${curId}"</strong>.<br>Los clics sobre el mapa agregarán puntos a este mismo trazo.<br>Si desea dibujar la <strong>Vuelta</strong>, pulse <em>"❌ Salir"</em> y use <em>"🔁 Crear Vuelta desde esta Ida"</em>.`;
+          modeIndicator.innerHTML = `⚠️ <strong>Modificando Trazo Existente: "${curId}"</strong>.<br>Puede arrastrar cualquier vértice para corregir calles o hacer clics sobre la línea para insertar puntos.<br>Si desea dibujar la <strong>Vuelta</strong>, pulse <em>"❌ Salir"</em> y use <em>"🔁 Crear Vuelta desde esta Ida"</em>.`;
           modeIndicator.style.background = 'rgba(234, 179, 8, 0.15)';
           modeIndicator.style.borderColor = 'rgba(234, 179, 8, 0.4)';
           modeIndicator.style.color = '#fef08a';
@@ -1435,6 +1556,8 @@
 
       if (shapeSelect && shapeSelect.value) {
         await loadSelectedShape(shapeSelect.value);
+      } else {
+        renderShapePolylineAndStats();
       }
       if (typeof updateViewerActionButtons === 'function') {
         updateViewerActionButtons(shapeSelect ? shapeSelect.value : null);
@@ -1467,11 +1590,11 @@
         editingOldStopId = null;
         if (title) title.textContent = '➕ Nuevo Paradero';
         if (instructions) {
-          instructions.innerHTML = '📍 <strong>Modo Edición:</strong> Haga clic en el mapa para ubicar las coordenadas del paradero, complete su nombre y pulse <em>"Guardar"</em>.';
+          instructions.innerHTML = '📍 <strong>Modo Edición:</strong> Haga clic sobre el trazo activo en el mapa para ubicar el paradero, complete su nombre y pulse <em>"Guardar"</em>.';
         }
         if (oldIdInput) oldIdInput.value = '';
         if (idInput) {
-          idInput.value = 'PAR_' + Math.floor(1000 + Math.random() * 9000);
+          idInput.value = getNextStopId();
           idInput.readOnly = false;
         }
         if (nameInput) nameInput.value = '';
@@ -1484,9 +1607,9 @@
         }
       } else if (stopData) {
         editingOldStopId = stopData.stop_id;
-        if (title) title.textContent = `✏️ Modificar Paradero [${stopData.stop_id}]`;
+        if (title) title.textContent = `✏️ Modificar Paradero [#${stopData.stop_id}]`;
         if (instructions) {
-          instructions.innerHTML = '✏️ <strong>Modificando Paradero:</strong> Puede editar el nombre, tipo o hacer clic en el mapa para reubicarlo. Pulse <em>"Guardar"</em> al finalizar.';
+          instructions.innerHTML = '✏️ <strong>Modificando Paradero:</strong> Puede editar el nombre, tipo o hacer clic en el trazo activo para reubicarlo. Pulse <em>"Guardar"</em> al finalizar.';
         }
         if (oldIdInput) oldIdInput.value = stopData.stop_id;
         if (idInput) {
@@ -1505,10 +1628,10 @@
           } else {
             tempStopMarker = L.circleMarker([stopData.stop_lat, stopData.stop_lon], {
               radius: 9,
-              color: '#ec4899',
-              fillColor: '#f43f5e',
-              fillOpacity: 0.9,
-              dashArray: '3, 3'
+              color: '#ffffff',
+              weight: 2.5,
+              fillColor: '#f97316',
+              fillOpacity: 0.95
             }).addTo(gtfsMap);
           }
         }
@@ -2063,15 +2186,37 @@
     const btnSaveStop = document.getElementById('btn-save-stop-sql');
     if (btnSaveStop) {
       btnSaveStop.addEventListener('click', async () => {
-        const stopId = document.getElementById('gtfs-stop-id')?.value.trim().toUpperCase();
-        const oldStopId = document.getElementById('gtfs-stop-old-id')?.value.trim().toUpperCase() || editingOldStopId;
+        const stopId = document.getElementById('gtfs-stop-id')?.value.trim();
+        const oldStopId = document.getElementById('gtfs-stop-old-id')?.value.trim() || editingOldStopId;
         const stopName = document.getElementById('gtfs-stop-name')?.value.trim();
         const stopType = parseInt(document.getElementById('gtfs-stop-type')?.value || '0', 10);
         const stopLat = parseFloat(document.getElementById('gtfs-stop-lat')?.value);
         const stopLon = parseFloat(document.getElementById('gtfs-stop-lon')?.value);
 
-        if (!stopId || !stopName || isNaN(stopLat) || isNaN(stopLon)) {
-          alert('Haga clic en el mapa para fijar coordenadas y complete el ID y nombre del paradero.');
+        if (!stopId || !/^\d+$/.test(stopId)) {
+          alert('⚠️ El ID del paradero debe ser un número entero positivo (ej. 1, 2, 3...).');
+          document.getElementById('gtfs-stop-id')?.focus();
+          return;
+        }
+
+        if (!stopName) {
+          alert('⚠️ Por favor ingrese el nombre del paradero.');
+          document.getElementById('gtfs-stop-name')?.focus();
+          return;
+        }
+
+        if (isNaN(stopLat) || isNaN(stopLon)) {
+          alert('⚠️ Debe seleccionar una ubicación en el mapa sobre el trazo activo antes de guardar.');
+          return;
+        }
+
+        // Validación de ID único en toda la red (Ida y Vuelta)
+        if (!oldStopId && allStops.some(s => String(s.stop_id) === String(stopId))) {
+          alert(`⚠️ El ID ${stopId} ya está en uso por otro paradero en el sistema.\nLos IDs de paraderos no pueden repetirse entre rutas o variantes (Ida y Vuelta).\n\nSiguiente ID libre sugerido: ${getNextStopId()}`);
+          return;
+        }
+        if (oldStopId && String(oldStopId) !== String(stopId) && allStops.some(s => String(s.stop_id) === String(stopId))) {
+          alert(`⚠️ No se puede renombrar al ID ${stopId} porque ya existe otro paradero con ese número en la red.`);
           return;
         }
 
@@ -2083,7 +2228,7 @@
             stop_lon: stopLon,
             location_type: stopType
           };
-          if (oldStopId && oldStopId !== stopId) {
+          if (oldStopId && String(oldStopId) !== String(stopId)) {
             payload.old_stop_id = oldStopId;
           }
 
@@ -2105,6 +2250,88 @@
         } catch (e) {
           alert(`❌ Error de comunicación: ${e.message}`);
         }
+      });
+    }
+
+    // Función para activar un trazo sobre el cual proyectar y colocar paraderos
+    setStopActiveShape = async function(shapeId) {
+      stopActiveShapeId = shapeId || '';
+      const badge = document.getElementById('stop-active-shape-badge');
+      const info = document.getElementById('stop-active-shape-info');
+
+      if (!shapeId) {
+        stopActiveShapePoints = [];
+        if (stopActivePolyline) stopActivePolyline.setLatLngs([]);
+        if (badge) {
+          badge.className = 'kpi-badge badge-warn';
+          badge.textContent = 'Sin trazo seleccionado';
+        }
+        if (info) {
+          info.innerHTML = '⚠️ <em>Seleccione un trazo arriba para proyectar y ajustar los paraderos sobre su recorrido.</em>';
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(shapeId)}`);
+        const pts = await res.json();
+        if (Array.isArray(pts) && pts.length > 0) {
+          stopActiveShapePoints = pts.map(p => ({
+            lat: p.shape_pt_lat,
+            lon: p.shape_pt_lon
+          }));
+          if (stopActivePolyline) {
+            stopActivePolyline.setLatLngs(stopActiveShapePoints.map(p => [p.lat, p.lon]));
+            stopActivePolyline.setStyle({
+              color: shapeId.includes('VUELTA') || shapeId.includes('_VTA') ? '#8b5cf6' : '#0284c7',
+              weight: 5.5,
+              opacity: 0.9
+            });
+          }
+          if (badge) {
+            badge.className = 'kpi-badge badge-ok';
+            badge.textContent = `Activo: ${shapeId} (${pts.length} pts)`;
+          }
+          if (info) {
+            info.innerHTML = `✅ Trazo <strong>${shapeId}</strong> activo. Al hacer clic, los paraderos se ajustarán automáticamente a esta línea.`;
+          }
+          if (gtfsMap && stopActivePolyline) {
+            const bounds = stopActivePolyline.getBounds();
+            if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [35, 35] });
+          }
+        } else {
+          stopActiveShapePoints = [];
+          if (stopActivePolyline) stopActivePolyline.setLatLngs([]);
+          if (badge) {
+            badge.className = 'kpi-badge badge-warn';
+            badge.textContent = 'Trazo vacío';
+          }
+          if (info) {
+            info.innerHTML = '⚠️ El trazo seleccionado no contiene puntos geométricos.';
+          }
+        }
+      } catch (e) {
+        console.error('[GTFS] Error cargando trazo activo para paraderos:', e);
+      }
+    };
+
+    const stopShapeSel = document.getElementById('gtfs-stop-shape-select');
+    if (stopShapeSel) {
+      stopShapeSel.addEventListener('change', () => {
+        setStopActiveShape(stopShapeSel.value);
+      });
+    }
+
+    // Botón de alternancia de orden para la lista de paraderos (Asc / Desc)
+    const btnToggleSort = document.getElementById('btn-toggle-stops-sort');
+    const sortIcon = document.getElementById('stops-sort-icon');
+    const sortLabel = document.getElementById('stops-sort-label');
+    if (btnToggleSort) {
+      btnToggleSort.addEventListener('click', () => {
+        currentStopsSort = currentStopsSort === 'ASC' ? 'DESC' : 'ASC';
+        if (sortIcon) sortIcon.textContent = currentStopsSort === 'ASC' ? '⬆️' : '⬇️';
+        if (sortLabel) sortLabel.textContent = currentStopsSort === 'ASC' ? 'ID Asc (1→N)' : 'ID Desc (N→1)';
+        renderStopsList();
       });
     }
 
@@ -2143,6 +2370,20 @@
     }
   }
 
+  function updateDistStats() {
+    let distKm = 0;
+    for (let i = 0; i < currentShapePoints.length - 1; i++) {
+      distKm += calcHaversineKm(
+        currentShapePoints[i].lat, currentShapePoints[i].lon,
+        currentShapePoints[i + 1].lat, currentShapePoints[i + 1].lon
+      );
+    }
+    const ptsCount = document.getElementById('gtfs-pts-count');
+    const distEl = document.getElementById('gtfs-dist-km');
+    if (ptsCount) ptsCount.textContent = currentShapePoints.length;
+    if (distEl) distEl.textContent = `${distKm.toFixed(2)} km`;
+  }
+
   function renderShapePolylineAndStats() {
     if (!shapePolyline) return;
     const latLngs = currentShapePoints.map(p => [p.lat, p.lon]);
@@ -2154,34 +2395,84 @@
         const isStart = index === 0;
         const isEnd = index === currentShapePoints.length - 1 && currentShapePoints.length > 1;
 
-        const radius = isStart || isEnd ? 6 : 3;
-        const color = isStart ? '#10b981' : (isEnd ? '#ef4444' : '#38bdf8');
+        if (isDrawingShape) {
+          // Vértices interactivos arrastrables para edición precisa de curvas y puntos
+          const fill = isStart ? '#10b981' : (isEnd ? '#ef4444' : '#0284c7');
+          const size = isStart || isEnd ? 16 : 13;
+          const handleIcon = L.divIcon({
+            className: 'vertex-handle-div',
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+            html: `<div style="width:${size}px; height:${size}px; border-radius:50%; background:${fill}; border:2.5px solid #ffffff; box-shadow:0 2px 6px rgba(0,0,0,0.6); cursor:grab;"></div>`
+          });
 
-        L.circleMarker([pt.lat, pt.lon], {
-          radius: radius,
-          color: color,
-          fillColor: color,
-          fillOpacity: 0.9,
-          weight: 1
-        }).bindTooltip(`Punto #${index + 1}<br>Lat: ${pt.lat}<br>Lon: ${pt.lon}`, { direction: 'top' })
-          .addTo(shapeMarkersGroup);
+          const vMarker = L.marker([pt.lat, pt.lon], {
+            draggable: true,
+            icon: handleIcon,
+            autoPan: true
+          }).addTo(shapeMarkersGroup);
+
+          vMarker.on('drag', (e) => {
+            const newPos = e.target.getLatLng();
+            currentShapePoints[index] = {
+              lat: parseFloat(newPos.lat.toFixed(6)),
+              lon: parseFloat(newPos.lng.toFixed(6))
+            };
+            shapePolyline.setLatLngs(currentShapePoints.map(p => [p.lat, p.lon]));
+            updateDistStats();
+          });
+
+          vMarker.on('dragend', () => {
+            renderShapePolylineAndStats();
+          });
+
+          vMarker.bindTooltip(`📍 Vértice #${index + 1}<br><em>(Mantenga presionado y arrastre para mover)</em>`, {
+            direction: 'top',
+            offset: [0, -size / 2]
+          });
+
+          vMarker.bindPopup(`
+            <div style="font-family: var(--font-sans); font-size: 0.8rem; padding: 4px; min-width: 180px;">
+              <div style="font-weight: 700; color: #38bdf8;">📍 Vértice #${index + 1} de ${currentShapePoints.length}</div>
+              <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 3px;">
+                Lat: ${pt.lat.toFixed(6)}<br>Lon: ${pt.lon.toFixed(6)}
+              </div>
+              <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 5px;">
+                💡 Arrastre este punto para corregir el trazado o bórrelo abajo.
+              </div>
+              <div style="margin-top: 8px;">
+                <button type="button" class="btn btn-secondary" onclick="window.removeShapeVertex(${index})" style="padding: 3px 8px; font-size: 0.72rem; width: 100%; justify-content: center; color: #f87171; border-color: rgba(248,113,113,0.4); cursor: pointer;">
+                  🗑️ Eliminar este punto
+                </button>
+              </div>
+            </div>
+          `);
+        } else {
+          // Marcadores estáticos para modo visualizador
+          const radius = isStart || isEnd ? 6 : 3;
+          const color = isStart ? '#10b981' : (isEnd ? '#ef4444' : '#38bdf8');
+          L.circleMarker([pt.lat, pt.lon], {
+            radius: radius,
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.9,
+            weight: 1
+          }).bindTooltip(`Punto #${index + 1}<br>Lat: ${pt.lat}<br>Lon: ${pt.lon}`, { direction: 'top' })
+            .addTo(shapeMarkersGroup);
+        }
       });
     }
 
-    // Calcular distancia Haversine
-    let distKm = 0;
-    for (let i = 0; i < currentShapePoints.length - 1; i++) {
-      distKm += calcHaversineKm(
-        currentShapePoints[i].lat, currentShapePoints[i].lon,
-        currentShapePoints[i + 1].lat, currentShapePoints[i + 1].lon
-      );
-    }
-
-    const ptsCount = document.getElementById('gtfs-pts-count');
-    const distEl = document.getElementById('gtfs-dist-km');
-    if (ptsCount) ptsCount.textContent = currentShapePoints.length;
-    if (distEl) distEl.textContent = `${distKm.toFixed(2)} km`;
+    updateDistStats();
   }
+
+  window.removeShapeVertex = function(index) {
+    if (index >= 0 && index < currentShapePoints.length) {
+      currentShapePoints.splice(index, 1);
+      if (gtfsMap) gtfsMap.closePopup();
+      renderShapePolylineAndStats();
+    }
+  };
 
   async function loadShapeList(selectIdToSet = null) {
     try {
@@ -2191,6 +2482,7 @@
 
       const sel = document.getElementById('gtfs-shape-select');
       const tripShapeSel = document.getElementById('trip-shape-select');
+      const stopShapeSel = document.getElementById('gtfs-stop-shape-select');
 
       if (sel) {
         sel.innerHTML = '';
@@ -2222,6 +2514,20 @@
         });
       }
 
+      if (stopShapeSel) {
+        const prevStopVal = stopShapeSel.value;
+        stopShapeSel.innerHTML = '<option value="">-- Seleccionar Trazo para colocar paraderos --</option>';
+        list.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.shape_id;
+          opt.textContent = `${s.shape_id} (${s.total_puntos} pts)`;
+          stopShapeSel.appendChild(opt);
+        });
+        if (prevStopVal && list.some(s => s.shape_id === prevStopVal)) {
+          stopShapeSel.value = prevStopVal;
+        }
+      }
+
       if (sel && sel.value) {
         await loadSelectedShape(sel.value);
       } else {
@@ -2236,37 +2542,62 @@
     }
   }
 
-  async function loadSelectedShape(shapeId) {
-    try {
-      if (typeof setShapeDirection === 'function') {
-        if (shapeId.includes('VUELTA') || shapeId.includes('_VTA')) {
-          setShapeDirection(1);
-        } else {
-          setShapeDirection(0);
-        }
-      }
-      const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(shapeId)}`);
-      const points = await res.json();
-      currentShapePoints = points.map(p => ({
-        lat: p.shape_pt_lat,
-        lon: p.shape_pt_lon
-      }));
-      renderShapePolylineAndStats();
-      if (currentShapePoints.length > 0 && gtfsMap && shapePolyline) {
-        const bounds = shapePolyline.getBounds();
-        if (bounds.isValid()) {
-          gtfsMap.fitBounds(bounds, { padding: [30, 30] });
-        }
-      }
-      if (typeof updateReferenceShape === 'function') {
-        updateReferenceShape();
-      }
-      if (typeof updateViewerActionButtons === 'function') {
-        updateViewerActionButtons(shapeId);
-      }
-    } catch (e) {
-      console.error('[GTFS] Error cargando trazo:', e);
+  function getNextStopId() {
+    if (!allStops || allStops.length === 0) return 1;
+    const nums = allStops
+      .map(s => parseInt(s.stop_id, 10))
+      .filter(n => !isNaN(n) && n > 0);
+    if (nums.length === 0) return 1;
+    return Math.max(...nums) + 1;
+  }
+
+  function renderStopsList() {
+    const listEl = document.getElementById('gtfs-stops-list');
+    if (!listEl) return;
+
+    if (!allStops || allStops.length === 0) {
+      listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay paraderos registrados aún.</div>';
+      return;
     }
+
+    const sortedStops = [...allStops].sort((a, b) => {
+      const numA = parseInt(a.stop_id, 10);
+      const numB = parseInt(b.stop_id, 10);
+      const valA = isNaN(numA) ? a.stop_id : numA;
+      const valB = isNaN(numB) ? b.stop_id : numB;
+      if (currentStopsSort === 'ASC') {
+        return valA > valB ? 1 : (valA < valB ? -1 : 0);
+      } else {
+        return valA < valB ? 1 : (valA > valB ? -1 : 0);
+      }
+    });
+
+    listEl.innerHTML = sortedStops.map(s => {
+      const isTerminal = s.location_type === 1;
+      const badgeClass = isTerminal ? 'badge-warn' : 'badge-ok';
+      const badgeText = isTerminal ? 'Terminal' : 'Paradero';
+      return `
+        <div class="gtfs-stop-item" data-stop-id="${s.stop_id}">
+          <div style="cursor: pointer; flex: 1; overflow: hidden;" onclick="window.focusGtfsStop(${s.stop_lat}, ${s.stop_lon})">
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span class="kpi-badge ${badgeClass}" style="font-size: 0.65rem; padding: 1px 4px;">${badgeText}</span>
+              <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f8fafc;">${s.stop_name}</strong>
+            </div>
+            <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">
+              <code style="color: #38bdf8;">#${s.stop_id}</code> | ${s.stop_lat.toFixed(4)}, ${s.stop_lon.toFixed(4)}
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.25rem; align-items: center;">
+            <button class="tbl-action-btn" onclick="window.editGtfsStop('${s.stop_id}')" title="Modificar Paradero" style="font-size: 0.72rem; padding: 2px 6px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+              ✏️
+            </button>
+            <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsStop('${s.stop_id}')" title="Eliminar Paradero">
+              🗑️
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
   async function loadStops() {
@@ -2283,70 +2614,53 @@
         stopsLayerGroup.clearLayers();
         stops.forEach(s => {
           const isTerminal = s.location_type === 1;
-          const markerColor = isTerminal ? '#f59e0b' : '#0ea5e9';
-          const markerFill = isTerminal ? '#d97706' : '#0284c7';
-          const radius = isTerminal ? 8 : 6;
-          const label = isTerminal ? '🏁 TERMINAL' : '🚏 PARADERO';
+          const markerFill = isTerminal ? '#dc2626' : '#f97316';
+          const radius = isTerminal ? 9 : 7;
+          const weight = isTerminal ? 3 : 2.5;
+          const badgeClass = isTerminal ? 'badge-warn' : 'badge-ok';
+          const badgeLabel = isTerminal ? '🏁 TERMINAL / CABECERA' : '🚏 PARADERO ORDINARIO';
 
           const marker = L.circleMarker([s.stop_lat, s.stop_lon], {
             radius: radius,
-            color: markerColor,
+            color: '#ffffff',
             fillColor: markerFill,
-            fillOpacity: 0.9,
-            weight: 2
+            fillOpacity: 0.95,
+            weight: weight
           }).addTo(stopsLayerGroup);
 
           marker.bindPopup(`
-            <div style="font-family: var(--font-sans); font-size: 0.8rem;">
-              <div style="font-weight: 700; color: #fff; margin-bottom: 2px;">${label}</div>
-              <div style="font-size: 0.85rem; color: #38bdf8; font-weight: 600;">${s.stop_name}</div>
-              <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 4px;">ID: <code>${s.stop_id}</code></div>
-              <div style="font-size: 0.7rem; color: var(--text-dim);">Lat: ${s.stop_lat}, Lon: ${s.stop_lon}</div>
-              <div style="margin-top: 6px;">
-                <button type="button" class="btn btn-secondary" onclick="window.editGtfsStop('${s.stop_id}')" style="padding: 2px 8px; font-size: 0.72rem; color: #38bdf8; border-color: #38bdf8; cursor: pointer;">
+            <div class="gtfs-stop-popup-card">
+              <div class="gtfs-stop-popup-header">
+                <span class="kpi-badge ${badgeClass}" style="font-size: 0.68rem; padding: 2px 6px;">${badgeLabel}</span>
+                <code style="font-size: 0.72rem; color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px;">ID: #${s.stop_id}</code>
+              </div>
+              <div class="gtfs-stop-popup-title">${s.stop_name}</div>
+              <div class="gtfs-stop-popup-row" style="margin-top: 8px;">
+                <span>Coordenadas:</span>
+                <strong>${s.stop_lat.toFixed(6)}, ${s.stop_lon.toFixed(6)}</strong>
+              </div>
+              <div class="gtfs-stop-popup-row">
+                <span>Tipo de Detención:</span>
+                <strong>${isTerminal ? 'Cabecera (Tipo 1)' : 'En vía (Tipo 0)'}</strong>
+              </div>
+              <div class="gtfs-stop-popup-actions">
+                <button type="button" class="btn btn-secondary" onclick="window.editGtfsStop('${s.stop_id}')" style="flex: 1; justify-content: center; font-size: 0.72rem; padding: 4px 8px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); cursor: pointer;">
                   ✏️ Modificar
                 </button>
-              </div>
-            </div>
-          `);
-        });
-      }
-
-      // Renderizar mini lista
-      const listEl = document.getElementById('gtfs-stops-list');
-      if (listEl) {
-        if (stops.length === 0) {
-          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay paraderos registrados aún.</div>';
-          return;
-        }
-
-        listEl.innerHTML = stops.map(s => {
-          const isTerminal = s.location_type === 1;
-          const badgeClass = isTerminal ? 'badge-warn' : 'badge-ok';
-          const badgeText = isTerminal ? 'Terminal' : 'Paradero';
-          return `
-            <div class="gtfs-stop-item" data-stop-id="${s.stop_id}">
-              <div style="cursor: pointer; flex: 1; overflow: hidden;" onclick="window.focusGtfsStop(${s.stop_lat}, ${s.stop_lon})">
-                <div style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span class="kpi-badge ${badgeClass}" style="font-size: 0.65rem; padding: 1px 4px;">${badgeText}</span>
-                  <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f8fafc;">${s.stop_name}</strong>
-                </div>
-                <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 2px;">
-                  <code>${s.stop_id}</code> | ${s.stop_lat.toFixed(4)}, ${s.stop_lon.toFixed(4)}
-                </div>
-              </div>
-              <div style="display: flex; gap: 0.25rem; align-items: center;">
-                <button class="tbl-action-btn" onclick="window.editGtfsStop('${s.stop_id}')" title="Modificar Paradero" style="font-size: 0.72rem; padding: 2px 6px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
-                  ✏️
-                </button>
-                <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsStop('${s.stop_id}')" title="Eliminar Paradero">
+                <button type="button" class="btn btn-secondary" onclick="window.deleteGtfsStop('${s.stop_id}')" style="justify-content: center; font-size: 0.72rem; padding: 4px 8px; color: #f87171; border-color: rgba(248, 113, 113, 0.4); cursor: pointer;" title="Eliminar Paradero">
                   🗑️
                 </button>
               </div>
             </div>
-          `;
-        }).join('');
+          `, {
+            className: 'gtfs-stop-popup',
+            offset: [0, -6],
+            maxWidth: 280
+          });
+        });
       }
+
+      renderStopsList();
     } catch (e) {
       console.error('[GTFS] Error cargando paraderos:', e);
     }

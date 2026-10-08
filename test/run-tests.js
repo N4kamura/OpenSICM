@@ -366,6 +366,55 @@ async function runTests() {
     gtfsStore.deleteFrequency(nightFreq.id);
   });
 
+  test('gtfsStore: valida paraderos con ID entero positivo, previene duplicados y permite nombres compartidos', () => {
+    gtfsStore.deleteStop('101');
+    gtfsStore.deleteStop('102');
+
+    // 1. Guardar paradero con ID numérico '101'
+    const res1 = gtfsStore.saveStop({
+      stop_id: '101',
+      stop_name: 'Paradero Salaverry',
+      stop_lat: -12.085000,
+      stop_lon: -76.975000,
+      location_type: 0
+    });
+    assert.strictEqual(res1.success, true);
+
+    // 2. Guardar paradero '102' con el MISMO NOMBRE (común en Ida y Vuelta)
+    const res2 = gtfsStore.saveStop({
+      stop_id: '102',
+      stop_name: 'Paradero Salaverry',
+      stop_lat: -12.085200,
+      stop_lon: -76.975200,
+      location_type: 0
+    });
+    assert.strictEqual(res2.success, true);
+
+    // 3. Intentar crear paradero con ID duplicado '101'
+    const resDup = gtfsStore.saveStop({
+      stop_id: '101',
+      stop_name: 'Otro Paradero',
+      stop_lat: -12.086000,
+      stop_lon: -76.976000
+    });
+    assert.strictEqual(resDup.success, false);
+    assert.ok(resDup.error.includes('ya está registrado en el sistema'));
+
+    // 4. Intentar guardar paradero con ID no entero 'PAR_XYZ'
+    const resInvalid = gtfsStore.saveStop({
+      stop_id: 'PAR_XYZ',
+      stop_name: 'Paradero Inválido',
+      stop_lat: -12.086000,
+      stop_lon: -76.976000
+    });
+    assert.strictEqual(resInvalid.success, false);
+    assert.ok(resInvalid.error.includes('número entero positivo'));
+
+    // Limpieza
+    gtfsStore.deleteStop('101');
+    gtfsStore.deleteStop('102');
+  });
+
   test('gtfsStore.exportCsv: genera archivos estándar GTFS en formato CSV', () => {
     gtfsStore.saveShape('TEST_CSV_SHAPE', [
       { lat: -12.083812, lon: -76.971038 },
@@ -377,7 +426,7 @@ async function runTests() {
     gtfsStore.deleteShape('TEST_CSV_SHAPE');
 
     gtfsStore.saveStop({
-      stop_id: 'TEST_CSV_STOP',
+      stop_id: '999',
       stop_name: 'Paradero Test CSV',
       stop_lat: -12.083812,
       stop_lon: -76.971038,
@@ -385,8 +434,8 @@ async function runTests() {
     });
     const csvStops = gtfsStore.exportCsv('stops.txt');
     assert.ok(csvStops.includes('stop_id,stop_name,stop_lat,stop_lon,location_type'));
-    assert.ok(csvStops.includes('TEST_CSV_STOP'));
-    gtfsStore.deleteStop('TEST_CSV_STOP');
+    assert.ok(csvStops.includes('999'));
+    gtfsStore.deleteStop('999');
 
     const csvRoutes = gtfsStore.exportCsv('routes.txt');
     assert.ok(csvRoutes.includes('route_id,agency_id,route_short_name,route_long_name,route_type'));
