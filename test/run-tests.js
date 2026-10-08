@@ -262,6 +262,27 @@ async function runTests() {
     assert.ok(shapes.length >= 1, 'Debe contener trazo de demostración');
   });
 
+  test('gtfsStore: gestiona empresa (agency.txt) guardar y restablecer', () => {
+    const saveRes = gtfsStore.saveAgency({
+      agency_id: 'TEST_EMP',
+      agency_name: 'Empresa Test S.A.',
+      agency_url: 'https://test.atu.gob.pe',
+      agency_timezone: 'America/Lima'
+    });
+    assert.strictEqual(saveRes.success, true);
+    assert.strictEqual(gtfsStore.getAgency().agency_name, 'Empresa Test S.A.');
+
+    gtfsStore.deleteAgency('TEST_EMP');
+    // Restaurar por defecto
+    gtfsStore.saveAgency({
+      agency_id: 'EMP_LIMA',
+      agency_name: 'Empresa de Transportes Lima & Callao S.A.',
+      agency_url: 'https://atu.gob.pe',
+      agency_timezone: 'America/Lima'
+    });
+    assert.strictEqual(gtfsStore.getAgency().agency_id, 'EMP_LIMA');
+  });
+
   test('gtfsStore: guarda, recupera y elimina trazo geométrico (shapes.txt)', () => {
     const points = [
       { lat: -12.046374, lon: -77.042793 },

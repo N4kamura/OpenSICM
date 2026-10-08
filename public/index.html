@@ -563,32 +563,47 @@
               <!-- PANEL MODO 1: SHAPES -->
               <div id="gtfs-shapes-panel">
                 <div class="form-field">
-                  <label>Seleccionar o Crear Trazo</label>
-                  <div style="display: flex; gap: 0.5rem;">
-                    <select id="gtfs-shape-select" style="flex: 1;">
-                      <option value="IO33B_IDA">IO33B_IDA (Ida)</option>
-                      <option value="IO33B_VUELTA">IO33B_VUELTA (Vuelta)</option>
-                      <option value="NUEVO">+ Crear Nuevo Trazo...</option>
-                    </select>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label style="margin: 0;">Seleccionar Trazo</label>
+                    <span class="kpi-badge badge-ok" id="gtfs-shape-mode-badge">👁️ VISUALIZADOR</span>
                   </div>
-                  <input type="text" id="gtfs-shape-new-input" placeholder="Nombre (ej. CR42_IDA)" style="display: none; margin-top: 0.4rem; text-transform: uppercase;">
+                  <select id="gtfs-shape-select" style="width: 100%;">
+                    <option value="IO33B_IDA">IO33B_IDA (Ida)</option>
+                    <option value="IO33B_VUELTA">IO33B_VUELTA (Vuelta)</option>
+                  </select>
+                  <input type="text" id="gtfs-shape-new-input" placeholder="Nombre nuevo trazo (ej. CR42_IDA)" style="display: none; margin-top: 0.4rem; text-transform: uppercase;">
                 </div>
 
-                <!-- Selector de Sentido (Ida vs Vuelta) -->
-                <div class="form-field">
-                  <label>Sentido del Recorrido</label>
-                  <div class="filter-pills" style="display: flex; gap: 0.35rem;">
-                    <button type="button" class="filter-pill active" id="btn-shape-dir-0" data-shape-dir="0" style="flex: 1; text-align: center;">
-                      🟢 IDA (Dir 0)
+                <!-- Botones de Acción en Modo Visualizador -->
+                <div id="shape-actions-viewer" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem;">
+                    <button type="button" class="btn btn-primary" id="btn-action-add-shape" style="justify-content: center; font-size: 0.78rem;">
+                      ➕ Nuevo Trazo
                     </button>
-                    <button type="button" class="filter-pill" id="btn-shape-dir-1" data-shape-dir="1" style="flex: 1; text-align: center;">
-                      🟣 VUELTA (Dir 1)
+                    <button type="button" class="btn btn-secondary" id="btn-action-edit-shape" style="justify-content: center; font-size: 0.78rem; border-color: #38bdf8; color: #38bdf8;">
+                      ✏️ Modificar
                     </button>
                   </div>
+                  <button type="button" class="btn btn-secondary" id="btn-action-delete-shape" style="justify-content: center; font-size: 0.78rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);" title="Eliminar trazo actual de SQLite">
+                    🗑️ Borrar Trazo Actual
+                  </button>
                 </div>
 
-                <!-- Botones de Acción de Trazado -->
-                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                <!-- Panel de Controles cuando se está en Modo Edición / Dibujo -->
+                <div id="shape-editor-controls" style="display: none; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                  <!-- Selector de Sentido (Ida vs Vuelta) -->
+                  <div class="form-field">
+                    <label>Sentido del Recorrido</label>
+                    <div class="filter-pills" style="display: flex; gap: 0.35rem;">
+                      <button type="button" class="filter-pill active" id="btn-shape-dir-0" data-shape-dir="0" style="flex: 1; text-align: center;">
+                        🟢 IDA (Dir 0)
+                      </button>
+                      <button type="button" class="filter-pill" id="btn-shape-dir-1" data-shape-dir="1" style="flex: 1; text-align: center;">
+                        🟣 VUELTA (Dir 1)
+                      </button>
+                    </div>
+                  </div>
+
                   <button type="button" class="btn btn-secondary" id="btn-copy-invert-shape" style="justify-content: center; font-size: 0.76rem; border-color: #8b5cf6; color: #c4b5fd; display: none;" title="Copia los puntos del trazo de IDA en orden inverso como base para la VUELTA">
                     🔄 Copiar e Invertir Ida para Vuelta
                   </button>
@@ -598,9 +613,9 @@
                     <label for="chk-show-reference-shape" style="cursor: pointer;">👁️ Mostrar trazo complementario de guía</label>
                   </div>
 
-                  <button type="button" class="btn btn-primary" id="btn-toggle-drawing" style="justify-content: center;">
-                    <span id="btn-drawing-icon">✏️</span> <span id="btn-drawing-text">Activar Dibujo en Mapa</span>
-                  </button>
+                  <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.72rem; color: #93c5fd;">
+                    📍 <strong>Modo Edición Activo:</strong> Haga clics sobre el mapa para trazar o extender puntos.
+                  </div>
 
                   <div style="display: flex; gap: 0.5rem;">
                     <button type="button" class="btn btn-secondary" id="btn-undo-point" style="flex: 1; justify-content: center;" title="Deshacer el último punto clickeado">
@@ -613,6 +628,10 @@
 
                   <button type="button" class="btn btn-success" id="btn-save-shape-sql" style="justify-content: center; background: #059669; color: #fff;">
                     💾 Guardar Trazo en SQLite
+                  </button>
+
+                  <button type="button" class="btn btn-secondary" id="btn-cancel-edit-shape" style="justify-content: center;">
+                    ❌ Salir / Cancelar Edición
                   </button>
                 </div>
 
@@ -628,8 +647,8 @@
                   </div>
                 </div>
 
-                <div class="gtfs-instructions">
-                  💡 <strong>Instrucciones:</strong> Haga clic en <em>"Activar Dibujo"</em> y luego haga clics sucesivos sobre el mapa siguiendo las avenidas para unir la polilínea oficial.
+                <div class="gtfs-instructions" id="gtfs-shape-instructions">
+                  💡 <strong>Modo Visualizador:</strong> El mapa está en modo lectura para inspeccionar trazos sin modificarlos por accidente. Use <em>"➕ Nuevo Trazo"</em> o <em>"✏️ Modificar"</em> para habilitar la edición.
                 </div>
               </div>
 
@@ -692,8 +711,45 @@
           <div class="gtfs-forms-grid">
             <!-- 1. Empresa / Operador -->
             <div class="testing-card">
-              <div class="card-heading">🏢 Empresa Operadora (agency.txt)</div>
-              <form id="form-gtfs-agency" style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>🏢 Empresa Operadora (agency.txt)</span>
+              </div>
+
+              <!-- Vista Resumen de Empresa (cuando ya existe) -->
+              <div id="agency-viewer-card" style="display: flex; flex-direction: column; gap: 0.6rem;">
+                <div style="background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.85rem;">
+                  <div style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase;">Razón Social / Operador</div>
+                  <div id="agency-view-name" style="font-weight: 700; color: #f8fafc; font-size: 1rem; margin-top: 2px;">Cargando empresa...</div>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.6rem; font-size: 0.78rem;">
+                    <div>
+                      <span style="color: var(--text-dim);">ID Empresa:</span>
+                      <strong id="agency-view-id" style="color: #38bdf8; margin-left: 4px;">-</strong>
+                    </div>
+                    <div>
+                      <span style="color: var(--text-dim);">Zona Horaria:</span>
+                      <span id="agency-view-tz" style="color: var(--text-main); margin-left: 4px;">-</span>
+                    </div>
+                  </div>
+
+                  <div style="margin-top: 0.5rem; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <span style="color: var(--text-dim);">Web:</span>
+                    <a id="agency-view-url" href="#" target="_blank" style="color: #38bdf8; text-decoration: none; margin-left: 4px;">-</a>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem;">
+                  <button type="button" class="btn btn-secondary" id="btn-edit-agency" style="flex: 1; justify-content: center; border-color: #38bdf8; color: #38bdf8; font-size: 0.78rem;">
+                    ✏️ Modificar Empresa
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="btn-reset-agency" style="justify-content: center; color: #f87171; border-color: rgba(248, 113, 113, 0.4); font-size: 0.78rem;" title="Restablecer o borrar datos de empresa">
+                    🗑️ Borrar
+                  </button>
+                </div>
+              </div>
+
+              <!-- Formulario de Empresa (para editar o crear) -->
+              <form id="form-gtfs-agency" style="display: none; flex-direction: column; gap: 0.75rem;">
                 <div class="form-field">
                   <label>ID Empresa</label>
                   <input type="text" id="agency-id" value="EMP_LIMA" required>
@@ -710,14 +766,27 @@
                   <label>Zona Horaria</label>
                   <input type="text" id="agency-tz" value="America/Lima" readonly>
                 </div>
-                <button type="submit" class="btn btn-primary" style="justify-content: center;">Guardar Empresa</button>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button type="submit" class="btn btn-primary" style="flex: 1; justify-content: center;">💾 Guardar Empresa</button>
+                  <button type="button" class="btn btn-secondary" id="btn-cancel-agency" style="justify-content: center;">❌ Cancelar</button>
+                </div>
               </form>
             </div>
 
             <!-- 2. Catálogo de Rutas -->
             <div class="testing-card">
-              <div class="card-heading">🚍 Rutas ATU (routes.txt)</div>
-              <form id="form-gtfs-route" style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>🚍 Rutas ATU (routes.txt)</span>
+                <button type="button" class="btn btn-primary" id="btn-show-add-route" style="padding: 3px 10px; font-size: 0.75rem;">
+                  ➕ Nueva Ruta
+                </button>
+              </div>
+
+              <!-- Formulario de Ruta (colapsable) -->
+              <form id="form-gtfs-route" style="display: none; flex-direction: column; gap: 0.75rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem;">
+                <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8;" id="route-form-title">
+                  ➕ Registrar Nueva Ruta
+                </div>
                 <div class="form-group-grid">
                   <div class="form-field">
                     <label>Código de Ruta</label>
@@ -734,10 +803,13 @@
                   <label>Nombre Completo / Itinerario</label>
                   <input type="text" id="route-long-name" placeholder="ej. Pachacútec - Javier Prado - Villa El Salvador">
                 </div>
-                <button type="submit" class="btn btn-primary" style="justify-content: center;">Registrar Ruta</button>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button type="submit" class="btn btn-primary" style="flex: 1; justify-content: center;">💾 Guardar Ruta</button>
+                  <button type="button" class="btn btn-secondary" id="btn-cancel-route" style="justify-content: center;">❌ Cancelar</button>
+                </div>
               </form>
 
-              <div style="margin-top: 0.75rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">
+              <div style="margin-top: 0.25rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">
                 RUTAS ACTIVAS EN SQLITE:
               </div>
               <div id="gtfs-routes-list" class="gtfs-items-container"></div>
@@ -745,38 +817,55 @@
 
             <!-- 3. Plantillas de Viaje (trips.txt) -->
             <div class="testing-card" style="grid-column: 1 / -1;">
-              <div class="card-heading">🔄 Plantillas de Viaje Ida y Vuelta (trips.txt)</div>
-              <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-                Vincula el código de ruta con el trazo geométrico y el sentido de viaje:
+              <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span>🔄 Plantillas de Viaje Ida y Vuelta (trips.txt)</span>
+                  <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                    Vincula el código de ruta con el trazo geométrico y el sentido de viaje
+                  </div>
+                </div>
+                <button type="button" class="btn btn-primary" id="btn-show-add-trip" style="padding: 4px 12px; font-size: 0.75rem;">
+                  ➕ Nuevo Viaje
+                </button>
               </div>
-              <form id="form-gtfs-trip" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
-                <div class="form-field" style="flex: 1; min-width: 140px;">
-                  <label>Trip ID</label>
-                  <input type="text" id="trip-id" required placeholder="ej. IO33B_IDA_PATTERN" style="text-transform: uppercase;">
+
+              <!-- Formulario de Viaje (colapsable) -->
+              <form id="form-gtfs-trip" style="display: none; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
+                <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 0.6rem;" id="trip-form-title">
+                  ➕ Registrar Plantilla de Viaje
                 </div>
-                <div class="form-field" style="flex: 1; min-width: 120px;">
-                  <label>Ruta</label>
-                  <select id="trip-route-select"></select>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+                  <div class="form-field" style="flex: 1; min-width: 140px;">
+                    <label>Trip ID</label>
+                    <input type="text" id="trip-id" required placeholder="ej. IO33B_IDA_PATTERN" style="text-transform: uppercase;">
+                  </div>
+                  <div class="form-field" style="flex: 1; min-width: 120px;">
+                    <label>Ruta</label>
+                    <select id="trip-route-select"></select>
+                  </div>
+                  <div class="form-field" style="flex: 1; min-width: 120px;">
+                    <label>Sentido</label>
+                    <select id="trip-direction">
+                      <option value="0">0 - IDA</option>
+                      <option value="1">1 - VUELTA</option>
+                    </select>
+                  </div>
+                  <div class="form-field" style="flex: 1; min-width: 140px;">
+                    <label>Trazo Geométrico (Shape)</label>
+                    <select id="trip-shape-select"></select>
+                  </div>
+                  <div class="form-field" style="flex: 2; min-width: 180px;">
+                    <label>Destino en Letrero (Headsign)</label>
+                    <input type="text" id="trip-headsign" placeholder="ej. Hacia Villa El Salvador">
+                  </div>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <button type="submit" class="btn btn-primary" style="height: 38px;">💾 Guardar</button>
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-trip" style="height: 38px;">❌</button>
+                  </div>
                 </div>
-                <div class="form-field" style="flex: 1; min-width: 120px;">
-                  <label>Sentido</label>
-                  <select id="trip-direction">
-                    <option value="0">0 - IDA</option>
-                    <option value="1">1 - VUELTA</option>
-                  </select>
-                </div>
-                <div class="form-field" style="flex: 1; min-width: 140px;">
-                  <label>Trazo Geométrico (Shape)</label>
-                  <select id="trip-shape-select"></select>
-                </div>
-                <div class="form-field" style="flex: 2; min-width: 180px;">
-                  <label>Destino en Letrero (Headsign)</label>
-                  <input type="text" id="trip-headsign" placeholder="ej. Hacia Villa El Salvador">
-                </div>
-                <button type="submit" class="btn btn-primary" style="height: 38px;">Guardar Viaje</button>
               </form>
 
-              <div id="gtfs-trips-list" class="gtfs-items-container" style="margin-top: 1rem;"></div>
+              <div id="gtfs-trips-list" class="gtfs-items-container" style="margin-top: 0.5rem;"></div>
             </div>
           </div>
         </div>
@@ -784,29 +873,46 @@
         <!-- SUBPESTAÑA 3: FRECUENCIAS -->
         <div class="gtfs-subtab-content" id="tab-gtfs-freqs">
           <div class="testing-card" style="max-width: 900px; margin: 0 auto; width: 100%;">
-            <div class="card-heading">⏱️ Programación de Intervalos de Despacho (frequencies.txt)</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">
-              En Lima, el servicio opera por intervalos de frecuencia (headway) según la franja horaria:
+            <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span>⏱️ Programación de Intervalos de Despacho (frequencies.txt)</span>
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                  En Lima, el servicio opera por intervalos de frecuencia (headway) según la franja horaria
+                </div>
+              </div>
+              <button type="button" class="btn btn-primary" id="btn-show-add-freq" style="padding: 4px 12px; font-size: 0.75rem;">
+                ➕ Añadir Intervalo
+              </button>
             </div>
 
-            <form id="form-gtfs-freq" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-top: 0.75rem;">
-              <div class="form-field" style="flex: 2; min-width: 180px;">
-                <label>Viaje / Sentido</label>
-                <select id="freq-trip-select"></select>
+            <!-- Formulario de Frecuencia (colapsable) -->
+            <form id="form-gtfs-freq" style="display: none; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.85rem; margin-top: 0.75rem;">
+              <input type="hidden" id="freq-id" value="">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 0.6rem;" id="freq-form-title">
+                ➕ Añadir Nuevo Intervalo de Frecuencia
               </div>
-              <div class="form-field" style="flex: 1; min-width: 110px;">
-                <label>Hora Inicio</label>
-                <input type="time" id="freq-start" value="06:00" required>
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+                <div class="form-field" style="flex: 2; min-width: 180px;">
+                  <label>Viaje / Sentido</label>
+                  <select id="freq-trip-select"></select>
+                </div>
+                <div class="form-field" style="flex: 1; min-width: 110px;">
+                  <label>Hora Inicio</label>
+                  <input type="time" id="freq-start" value="06:00" required>
+                </div>
+                <div class="form-field" style="flex: 1; min-width: 110px;">
+                  <label>Hora Fin</label>
+                  <input type="time" id="freq-end" value="09:00" required>
+                </div>
+                <div class="form-field" style="flex: 1; min-width: 140px;">
+                  <label>Intervalo (Minutos)</label>
+                  <input type="number" id="freq-mins" value="4" min="1" max="60" required>
+                </div>
+                <div style="display: flex; gap: 0.4rem;">
+                  <button type="submit" class="btn btn-primary" id="btn-submit-freq" style="height: 38px;">💾 Guardar</button>
+                  <button type="button" class="btn btn-secondary" id="btn-cancel-freq" style="height: 38px;">❌</button>
+                </div>
               </div>
-              <div class="form-field" style="flex: 1; min-width: 110px;">
-                <label>Hora Fin</label>
-                <input type="time" id="freq-end" value="09:00" required>
-              </div>
-              <div class="form-field" style="flex: 1; min-width: 140px;">
-                <label>Intervalo (Minutos)</label>
-                <input type="number" id="freq-mins" value="4" min="1" max="60" required>
-              </div>
-              <button type="submit" class="btn btn-primary" style="height: 38px;">Añadir Intervalo</button>
             </form>
 
             <div class="fleet-table-wrapper" style="margin-top: 1.25rem;">

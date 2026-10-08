@@ -84,17 +84,28 @@ class GtfsStore {
   }
 
   // --- AGENCY ---
-  getAgency() {
+  getAgency(agencyId = null) {
     try {
+      if (agencyId) {
+        return db.prepare('SELECT * FROM gtfs_agency WHERE agency_id = ?').get() || null;
+      }
       const row = db.prepare('SELECT * FROM gtfs_agency LIMIT 1').get();
-      return row || {
-        agency_id: 'EMP_LIMA',
-        agency_name: 'Empresa de Transporte',
-        agency_url: 'https://atu.gob.pe',
-        agency_timezone: 'America/Lima'
-      };
+      return row || null;
     } catch (e) {
       return null;
+    }
+  }
+
+  deleteAgency(agencyId = null) {
+    try {
+      if (agencyId) {
+        db.prepare('DELETE FROM gtfs_agency WHERE agency_id = ?').run(agencyId);
+      } else {
+        db.prepare('DELETE FROM gtfs_agency').run();
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   }
 
@@ -105,6 +116,9 @@ class GtfsStore {
     const tz = (data.agency_timezone || 'America/Lima').trim();
 
     try {
+      // Garantizar empresa única en el sistema
+      db.prepare('DELETE FROM gtfs_agency WHERE agency_id != ?').run(id);
+
       db.prepare(`
         INSERT INTO gtfs_agency (agency_id, agency_name, agency_url, agency_timezone)
         VALUES (?, ?, ?, ?)
@@ -113,7 +127,7 @@ class GtfsStore {
           agency_url = excluded.agency_url,
           agency_timezone = excluded.agency_timezone
       `).run(id, name, url, tz);
-      return { success: true, agency: this.getAgency() };
+      return { success: true, agency: this.getAgency(id) };
     } catch (err) {
       return { success: false, error: err.message };
     }

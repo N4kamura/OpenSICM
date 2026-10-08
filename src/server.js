@@ -441,6 +441,23 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (method === 'POST' && pathname === '/api/gtfs/agency/delete') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { agency_id } = body ? JSON.parse(body) : {};
+        const result = gtfsStore.deleteAgency(agency_id);
+        res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'JSON malformado' }));
+      }
+    });
+    return;
+  }
+
   // B. Routes
   if (method === 'GET' && pathname === '/api/gtfs/routes') {
     res.writeHead(200, { 'Content-Type': 'application/json' });

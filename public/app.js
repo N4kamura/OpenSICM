@@ -1305,14 +1305,128 @@
         btnModeShapes.classList.remove('active');
         if (panelStops) panelStops.style.display = 'block';
         if (panelShapes) panelShapes.style.display = 'none';
-        if (isDrawingShape) toggleDrawingMode();
+        if (isDrawingShape) exitShapeEditorMode();
       });
     }
 
-    // Botón Activar / Detener Dibujo
-    const btnToggleDraw = document.getElementById('btn-toggle-drawing');
-    if (btnToggleDraw) {
-      btnToggleDraw.addEventListener('click', toggleDrawingMode);
+    // Funciones de control de Modo Visualizador vs Edición
+    function enterShapeEditorMode(isNew = false) {
+      isDrawingShape = true;
+      const badge = document.getElementById('gtfs-shape-mode-badge');
+      const viewerActions = document.getElementById('shape-actions-viewer');
+      const editorControls = document.getElementById('shape-editor-controls');
+      const instructions = document.getElementById('gtfs-shape-instructions');
+      const inputNew = document.getElementById('gtfs-shape-new-input');
+
+      if (badge) {
+        badge.className = 'kpi-badge badge-warn';
+        badge.textContent = '✏️ MODO EDICIÓN ACTIVO';
+      }
+      if (viewerActions) viewerActions.style.display = 'none';
+      if (editorControls) editorControls.style.display = 'flex';
+      if (instructions) {
+        instructions.innerHTML = '✏️ <strong>Modo Edición:</strong> Haga clics en el mapa para trazar o extender puntos. Use <em>"Guardar"</em> al finalizar o <em>"Salir / Cancelar"</em> para descartar.';
+      }
+
+      if (isNew) {
+        if (inputNew) {
+          inputNew.style.display = 'block';
+          const defaultRoute = (allRoutes && allRoutes[0]?.route_short_name) || 'IO33B';
+          const dirSuffix = currentShapeDir === 0 ? '_IDA' : '_VUELTA';
+          inputNew.value = `${defaultRoute}${dirSuffix}`;
+          inputNew.focus();
+        }
+        currentShapePoints = [];
+        renderShapePolylineAndStats();
+      } else {
+        if (inputNew) inputNew.style.display = 'none';
+      }
+    }
+
+    async function exitShapeEditorMode() {
+      isDrawingShape = false;
+      const badge = document.getElementById('gtfs-shape-mode-badge');
+      const viewerActions = document.getElementById('shape-actions-viewer');
+      const editorControls = document.getElementById('shape-editor-controls');
+      const instructions = document.getElementById('gtfs-shape-instructions');
+      const inputNew = document.getElementById('gtfs-shape-new-input');
+      const shapeSelect = document.getElementById('gtfs-shape-select');
+
+      if (badge) {
+        badge.className = 'kpi-badge badge-ok';
+        badge.textContent = '👁️ VISUALIZADOR';
+      }
+      if (viewerActions) viewerActions.style.display = 'flex';
+      if (editorControls) editorControls.style.display = 'none';
+      if (inputNew) inputNew.style.display = 'none';
+      if (instructions) {
+        instructions.innerHTML = '💡 <strong>Modo Visualizador:</strong> El mapa está en modo lectura para inspeccionar trazos sin modificarlos por accidente. Use <em>"➕ Nuevo Trazo"</em> o <em>"✏️ Modificar"</em> para habilitar la edición.';
+      }
+
+      if (shapeSelect && shapeSelect.value) {
+        await loadSelectedShape(shapeSelect.value);
+      }
+    }
+
+    // Botones de Acción del Trazo
+    const btnActionAddShape = document.getElementById('btn-action-add-shape');
+    const btnActionEditShape = document.getElementById('btn-action-edit-shape');
+    const btnActionDeleteShape = document.getElementById('btn-action-delete-shape');
+    const btnCancelEditShape = document.getElementById('btn-cancel-edit-shape');
+
+    if (btnActionAddShape) {
+      btnActionAddShape.addEventListener('click', () => {
+        enterShapeEditorMode(true);
+      });
+    }
+
+    if (btnActionEditShape) {
+      btnActionEditShape.addEventListener('click', () => {
+        const sel = document.getElementById('gtfs-shape-select');
+        if (!sel || !sel.value) {
+          alert('Seleccione un trazo primero o haga clic en "➕ Nuevo Trazo".');
+          return;
+        }
+        enterShapeEditorMode(false);
+      });
+    }
+
+    if (btnActionDeleteShape) {
+      btnActionDeleteShape.addEventListener('click', async () => {
+        const sel = document.getElementById('gtfs-shape-select');
+        const shapeId = sel ? sel.value : '';
+        if (!shapeId) {
+          alert('No hay ningún trazo seleccionado para eliminar.');
+          return;
+        }
+        if (!confirm(`¿Está seguro de eliminar el trazo "${shapeId}" de SQLite?\nSe borrarán todos sus puntos geométricos.`)) {
+          return;
+        }
+        try {
+          const res = await fetch('/api/gtfs/shapes/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shape_id: shapeId })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert(`✅ Trazo "${shapeId}" eliminado exitosamente.`);
+            currentShapePoints = [];
+            renderShapePolylineAndStats();
+            await loadShapeList();
+          } else {
+            alert(`❌ Error al eliminar trazo: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`❌ Error de conexión: ${err.message}`);
+        }
+      });
+    }
+
+    if (btnCancelEditShape) {
+      btnCancelEditShape.addEventListener('click', async () => {
+        await exitShapeEditorMode();
+      });
     }
 
     // Deshacer punto
@@ -1353,8 +1467,9 @@
 
       const sel = document.getElementById('gtfs-shape-select');
       const inputNew = document.getElementById('gtfs-shape-new-input');
-      let curId = sel ? sel.value : '';
-      if (curId === 'NUEVO' && inputNew) curId = inputNew.value.trim().toUpperCase();
+      let curId = inputNew && inputNew.style.display !== 'none'
+        ? inputNew.value.trim().toUpperCase()
+        : (sel ? sel.value : '');
 
       let targetRefId = '';
       if (currentShapeDir === 1) {
@@ -1393,9 +1508,8 @@
         btnCopyInvert.style.display = dir === 1 ? 'flex' : 'none';
       }
 
-      const sel = document.getElementById('gtfs-shape-select');
       const inputNew = document.getElementById('gtfs-shape-new-input');
-      if (sel && sel.value === 'NUEVO' && inputNew) {
+      if (inputNew && inputNew.style.display !== 'none') {
         let val = inputNew.value.trim().toUpperCase();
         if (!val) {
           const firstRoute = allRoutes[0]?.route_short_name || 'IO33B';
@@ -1418,8 +1532,9 @@
       btnCopyInvert.addEventListener('click', async () => {
         const sel = document.getElementById('gtfs-shape-select');
         const inputNew = document.getElementById('gtfs-shape-new-input');
-        let curId = sel ? sel.value : '';
-        if (curId === 'NUEVO' && inputNew) curId = inputNew.value.trim().toUpperCase();
+        let curId = inputNew && inputNew.style.display !== 'none'
+          ? inputNew.value.trim().toUpperCase()
+          : (sel ? sel.value : '');
 
         let baseId = curId.replace(/_VUELTA$/, '').replace(/_VTA$/, '').replace(/_IDA$/, '');
         let targetIda = baseId ? `${baseId}_IDA` : 'IO33B_IDA';
@@ -1443,11 +1558,11 @@
             if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
           }
 
-          if (sel && sel.value === 'NUEVO' && inputNew) {
+          if (inputNew && inputNew.style.display !== 'none') {
             inputNew.value = `${baseId || 'IO33B'}_VUELTA`;
           }
 
-          alert(`✅ ¡Trazo de VUELTA generado exitosamente!\n\nSe copiaron e invirtieron ${currentShapePoints.length} puntos de "${targetIda}".\nAhora puede activar el dibujo en el mapa para extenderlo o modificar tramos que difieran.`);
+          alert(`✅ ¡Trazo de VUELTA generado exitosamente!\n\nSe copiaron e invirtieron ${currentShapePoints.length} puntos de "${targetIda}".\nAhora puede hacer clics en el mapa para extenderlo o modificar tramos que difieran.`);
         } catch (err) {
           alert(`Error al generar trazo invertido: ${err.message}`);
         }
@@ -1460,10 +1575,9 @@
       btnSaveShape.addEventListener('click', async () => {
         const sel = document.getElementById('gtfs-shape-select');
         const inputNew = document.getElementById('gtfs-shape-new-input');
-        let shapeId = sel ? sel.value : 'IO33B_IDA';
-        if (shapeId === 'NUEVO') {
-          shapeId = inputNew ? inputNew.value.trim().toUpperCase() : '';
-        }
+        let shapeId = inputNew && inputNew.style.display !== 'none'
+          ? inputNew.value.trim().toUpperCase()
+          : (sel ? sel.value : '');
 
         if (!shapeId) {
           alert('Por favor ingrese o seleccione un ID de trazo (ej. IO33B_IDA)');
@@ -1485,6 +1599,7 @@
           if (data.success) {
             alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos.`);
             await loadShapeList(shapeId);
+            await exitShapeEditorMode();
           } else {
             alert(`❌ Error al guardar trazo: ${data.error}`);
           }
@@ -1496,19 +1611,10 @@
 
     // Cambio en selector de trazo
     const shapeSelect = document.getElementById('gtfs-shape-select');
-    const shapeNewInput = document.getElementById('gtfs-shape-new-input');
     if (shapeSelect) {
       shapeSelect.addEventListener('change', async () => {
-        if (shapeSelect.value === 'NUEVO') {
-          if (shapeNewInput) {
-            shapeNewInput.style.display = 'block';
-            shapeNewInput.value = '';
-            shapeNewInput.focus();
-          }
-          currentShapePoints = [];
-          renderShapePolylineAndStats();
-        } else {
-          if (shapeNewInput) shapeNewInput.style.display = 'none';
+        await exitShapeEditorMode();
+        if (shapeSelect.value) {
           await loadSelectedShape(shapeSelect.value);
         }
       });
@@ -1654,10 +1760,9 @@
           sel.appendChild(opt);
         });
 
-        const optNew = document.createElement('option');
-        optNew.value = 'NUEVO';
-        optNew.textContent = '+ Crear Nuevo Trazo...';
-        sel.appendChild(optNew);
+        if (list.length === 0) {
+          sel.innerHTML = '<option value="">(Sin trazos guardados)</option>';
+        }
 
         if (selectIdToSet && list.some(s => s.shape_id === selectIdToSet)) {
           sel.value = selectIdToSet;
@@ -1676,8 +1781,11 @@
         });
       }
 
-      if (sel && sel.value && sel.value !== 'NUEVO') {
+      if (sel && sel.value) {
         await loadSelectedShape(sel.value);
+      } else {
+        currentShapePoints = [];
+        renderShapePolylineAndStats();
       }
     } catch (e) {
       console.error('[GTFS] Error cargando lista de trazos:', e);
@@ -1813,45 +1921,126 @@
   };
 
   // --- AGENCY ---
-  async function setupAgencyForm() {
+  let currentAgency = null;
+
+  async function renderAgency() {
+    const viewerCard = document.getElementById('agency-viewer-card');
     const form = document.getElementById('form-gtfs-agency');
-    if (!form) return;
+    if (!viewerCard || !form) return;
 
     try {
       const res = await fetch('/api/gtfs/agency');
       const a = await res.json();
-      if (a) {
-        if (document.getElementById('agency-id')) document.getElementById('agency-id').value = a.agency_id || 'EMP_LIMA';
-        if (document.getElementById('agency-name')) document.getElementById('agency-name').value = a.agency_name || '';
-        if (document.getElementById('agency-url')) document.getElementById('agency-url').value = a.agency_url || '';
-        if (document.getElementById('agency-tz')) document.getElementById('agency-tz').value = a.agency_timezone || 'America/Lima';
-      }
-    } catch (e) {}
+      currentAgency = a;
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const payload = {
-        agency_id: document.getElementById('agency-id')?.value.trim() || 'EMP_LIMA',
-        agency_name: document.getElementById('agency-name')?.value.trim(),
-        agency_url: document.getElementById('agency-url')?.value.trim(),
-        agency_timezone: document.getElementById('agency-tz')?.value.trim() || 'America/Lima'
-      };
-      try {
-        const res = await fetch('/api/gtfs/agency', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) alert('✅ Datos de empresa (agency.txt) actualizados en SQLite.');
-        else alert(`❌ Error: ${data.error}`);
-      } catch (err) {
-        alert(`❌ Error de conexión: ${err.message}`);
+      if (a && a.agency_name) {
+        const nameEl = document.getElementById('agency-view-name');
+        const idEl = document.getElementById('agency-view-id');
+        const tzEl = document.getElementById('agency-view-tz');
+        const urlEl = document.getElementById('agency-view-url');
+
+        if (nameEl) nameEl.textContent = a.agency_name;
+        if (idEl) idEl.textContent = a.agency_id || '-';
+        if (tzEl) tzEl.textContent = a.agency_timezone || 'America/Lima';
+        if (urlEl) {
+          urlEl.textContent = a.agency_url || 'Sin sitio web';
+          urlEl.href = a.agency_url || '#';
+        }
+
+        viewerCard.style.display = 'flex';
+        form.style.display = 'none';
+      } else {
+        viewerCard.style.display = 'none';
+        form.style.display = 'flex';
       }
-    });
+    } catch (e) {
+      console.error('[GTFS] Error cargando empresa:', e);
+    }
+  }
+
+  function setupAgencyForm() {
+    const form = document.getElementById('form-gtfs-agency');
+    const btnEdit = document.getElementById('btn-edit-agency');
+    const btnCancel = document.getElementById('btn-cancel-agency');
+    const btnReset = document.getElementById('btn-reset-agency');
+    const viewerCard = document.getElementById('agency-viewer-card');
+
+    if (btnEdit) {
+      btnEdit.addEventListener('click', () => {
+        if (currentAgency) {
+          if (document.getElementById('agency-id')) document.getElementById('agency-id').value = currentAgency.agency_id || 'EMP_LIMA';
+          if (document.getElementById('agency-name')) document.getElementById('agency-name').value = currentAgency.agency_name || '';
+          if (document.getElementById('agency-url')) document.getElementById('agency-url').value = currentAgency.agency_url || '';
+          if (document.getElementById('agency-tz')) document.getElementById('agency-tz').value = currentAgency.agency_timezone || 'America/Lima';
+        }
+        if (viewerCard) viewerCard.style.display = 'none';
+        if (form) form.style.display = 'flex';
+      });
+    }
+
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (viewerCard && currentAgency && currentAgency.agency_name) {
+          viewerCard.style.display = 'flex';
+          if (form) form.style.display = 'none';
+        }
+      });
+    }
+
+    if (btnReset) {
+      btnReset.addEventListener('click', async () => {
+        if (!confirm('¿Desea borrar o restablecer los datos de la empresa operadora de SQLite?')) return;
+        try {
+          const res = await fetch('/api/gtfs/agency/delete', { method: 'POST' });
+          const data = await res.json();
+          if (data.success) {
+            currentAgency = null;
+            if (document.getElementById('agency-name')) document.getElementById('agency-name').value = '';
+            if (document.getElementById('agency-url')) document.getElementById('agency-url').value = '';
+            await renderAgency();
+          } else {
+            alert(`Error: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`Error de conexión: ${err.message}`);
+        }
+      });
+    }
+
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+          agency_id: document.getElementById('agency-id')?.value.trim() || 'EMP_LIMA',
+          agency_name: document.getElementById('agency-name')?.value.trim(),
+          agency_url: document.getElementById('agency-url')?.value.trim(),
+          agency_timezone: document.getElementById('agency-tz')?.value.trim() || 'America/Lima'
+        };
+        try {
+          const res = await fetch('/api/gtfs/agency', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert('✅ Datos de empresa (agency.txt) guardados en SQLite.');
+            await renderAgency();
+          } else {
+            alert(`❌ Error: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`❌ Error de conexión: ${err.message}`);
+        }
+      });
+    }
+
+    renderAgency();
   }
 
   // --- ROUTES & TRIPS ---
+  let editingRouteId = null;
+
   async function loadRoutesAndTrips() {
     await loadRoutes();
     await loadTrips();
@@ -1863,7 +2052,10 @@
       const routes = await res.json();
       allRoutes = routes;
 
-      // Si no tenemos la flota cargada, intentar cargarla para mostrar conteos
+      const formRoute = document.getElementById('form-gtfs-route');
+      if (formRoute) formRoute.style.display = 'none';
+      editingRouteId = null;
+
       if (!fleetData || fleetData.length === 0) {
         try {
           const fRes = await fetch('/api/fleet');
@@ -1882,7 +2074,7 @@
       const listEl = document.getElementById('gtfs-routes-list');
       if (listEl) {
         if (routes.length === 0) {
-          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay rutas registradas.</div>';
+          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay rutas registradas. Haga clic en "+ Nueva Ruta" para agregar.</div>';
           return;
         }
 
@@ -1900,6 +2092,9 @@
                 </div>
               </div>
               <div style="display: flex; gap: 0.35rem; align-items: center;">
+                <button class="tbl-action-btn" onclick="window.editGtfsRoute('${r.route_id}')" title="Modificar ruta" style="font-size: 0.72rem; padding: 3px 7px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+                  ✏️ Modificar
+                </button>
                 <button class="tbl-action-btn" onclick="window.autoGenerateTrips('${r.route_id}')" title="Crear viajes estándar de Ida y Vuelta para esta ruta" style="font-size: 0.72rem; padding: 3px 7px; color: #a78bfa; border-color: rgba(167, 139, 250, 0.4);">
                   ⚡ Trips Ida/Vta
                 </button>
@@ -1916,43 +2111,96 @@
     }
   }
 
+  window.editGtfsRoute = function(routeId) {
+    const r = (allRoutes || []).find(item => item.route_id === routeId);
+    if (!r) return;
+    editingRouteId = routeId;
+    const form = document.getElementById('form-gtfs-route');
+    const title = document.getElementById('route-form-title');
+    const shortInput = document.getElementById('route-short-name');
+    const longInput = document.getElementById('route-long-name');
+    const typeSelect = document.getElementById('route-type');
+
+    if (title) title.textContent = `✏️ Modificar Ruta [${r.route_short_name}]`;
+    if (shortInput) {
+      shortInput.value = r.route_short_name;
+      shortInput.readOnly = true;
+    }
+    if (longInput) longInput.value = r.route_long_name || '';
+    if (typeSelect) typeSelect.value = r.route_type !== undefined ? r.route_type : 3;
+
+    if (form) {
+      form.style.display = 'flex';
+      form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    if (longInput) longInput.focus();
+  };
+
   function setupRouteForm() {
     const form = document.getElementById('form-gtfs-route');
-    if (!form) return;
+    const btnShowAdd = document.getElementById('btn-show-add-route');
+    const btnCancel = document.getElementById('btn-cancel-route');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const shortName = document.getElementById('route-short-name')?.value.trim().toUpperCase();
-      const longName = document.getElementById('route-long-name')?.value.trim();
-      const routeType = parseInt(document.getElementById('route-type')?.value || '3', 10);
-      const agencyId = document.getElementById('agency-id')?.value.trim() || 'EMP_LIMA';
-
-      if (!shortName) return;
-
-      try {
-        const res = await fetch('/api/gtfs/routes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            route_id: shortName,
-            agency_id: agencyId,
-            route_short_name: shortName,
-            route_long_name: longName,
-            route_type: routeType
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          if (document.getElementById('route-short-name')) document.getElementById('route-short-name').value = '';
-          if (document.getElementById('route-long-name')) document.getElementById('route-long-name').value = '';
-          await loadRoutes();
-        } else {
-          alert(`❌ Error al registrar ruta: ${data.error}`);
+    if (btnShowAdd) {
+      btnShowAdd.addEventListener('click', () => {
+        editingRouteId = null;
+        const title = document.getElementById('route-form-title');
+        const shortInput = document.getElementById('route-short-name');
+        const longInput = document.getElementById('route-long-name');
+        if (title) title.textContent = '➕ Registrar Nueva Ruta';
+        if (shortInput) {
+          shortInput.value = '';
+          shortInput.readOnly = false;
         }
-      } catch (err) {
-        alert(`❌ Error de conexión: ${err.message}`);
-      }
-    });
+        if (longInput) longInput.value = '';
+        if (form) {
+          form.style.display = 'flex';
+          if (shortInput) shortInput.focus();
+        }
+      });
+    }
+
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (form) form.style.display = 'none';
+        editingRouteId = null;
+      });
+    }
+
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const shortName = document.getElementById('route-short-name')?.value.trim().toUpperCase();
+        const longName = document.getElementById('route-long-name')?.value.trim();
+        const routeType = parseInt(document.getElementById('route-type')?.value || '3', 10);
+        const agencyId = document.getElementById('agency-id')?.value.trim() || 'EMP_LIMA';
+
+        if (!shortName) return;
+
+        try {
+          const res = await fetch('/api/gtfs/routes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              route_id: shortName,
+              agency_id: agencyId,
+              route_short_name: shortName,
+              route_long_name: longName,
+              route_type: routeType
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            form.style.display = 'none';
+            await loadRoutes();
+          } else {
+            alert(`❌ Error al guardar ruta: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`❌ Error de conexión: ${err.message}`);
+        }
+      });
+    }
   }
 
   window.deleteGtfsRoute = async function(routeId) {
@@ -2011,11 +2259,17 @@
   };
 
   // --- TRIPS ---
+  let editingTripId = null;
+
   async function loadTrips() {
     try {
       const res = await fetch('/api/gtfs/trips');
       const trips = await res.json();
       allTrips = trips;
+
+      const formTrip = document.getElementById('form-gtfs-trip');
+      if (formTrip) formTrip.style.display = 'none';
+      editingTripId = null;
 
       // Actualizar select de Trips en Frecuencias
       const freqTripSel = document.getElementById('freq-trip-select');
@@ -2030,24 +2284,31 @@
       const listEl = document.getElementById('gtfs-trips-list');
       if (listEl) {
         if (trips.length === 0) {
-          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay viajes registrados.</div>';
+          listEl.innerHTML = '<div style="color: var(--text-dim); padding: 0.5rem; font-size: 0.75rem;">No hay viajes registrados. Haga clic en "+ Nuevo Viaje" para agregar.</div>';
           return;
         }
 
         listEl.innerHTML = trips.map(t => {
           const dirLabel = t.direction_id === 0 ? 'Sentido: IDA (0)' : 'Sentido: VUELTA (1)';
           return `
-            <div class="gtfs-pill-item">
-              <div>
-                <strong style="color: #38bdf8;">${t.trip_id}</strong>
-                <span class="bus-ruta-badge" style="margin-left: 6px;">${t.route_id}</span>
-                <span style="font-size: 0.72rem; color: var(--text-muted); margin-left: 6px;">${dirLabel}</span>
-                <span style="font-size: 0.72rem; color: #34d399; margin-left: 6px;">Shape: ${t.shape_id || 'S/T'}</span>
-                ${t.trip_headsign ? `<span style="font-size: 0.72rem; color: var(--text-dim); margin-left: 6px;">[${t.trip_headsign}]</span>` : ''}
+            <div class="gtfs-pill-item" style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.75rem;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                  <strong style="color: #38bdf8;">${t.trip_id}</strong>
+                  <span class="bus-ruta-badge">${t.route_id}</span>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">${dirLabel}</span>
+                  <span style="font-size: 0.72rem; color: #34d399;">Shape: ${t.shape_id || 'S/T'}</span>
+                  ${t.trip_headsign ? `<span style="font-size: 0.72rem; color: var(--text-dim);">[${t.trip_headsign}]</span>` : ''}
+                </div>
               </div>
-              <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsTrip('${t.trip_id}')" title="Eliminar Viaje">
-                🗑️
-              </button>
+              <div style="display: flex; gap: 0.35rem; align-items: center;">
+                <button class="tbl-action-btn" onclick="window.editGtfsTrip('${t.trip_id}')" title="Modificar viaje" style="font-size: 0.72rem; padding: 3px 7px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+                  ✏️ Modificar
+                </button>
+                <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsTrip('${t.trip_id}')" title="Eliminar Viaje">
+                  🗑️
+                </button>
+              </div>
             </div>
           `;
         }).join('');
@@ -2057,44 +2318,100 @@
     }
   }
 
+  window.editGtfsTrip = function(tripId) {
+    const t = (allTrips || []).find(item => item.trip_id === tripId);
+    if (!t) return;
+    editingTripId = tripId;
+    const form = document.getElementById('form-gtfs-trip');
+    const title = document.getElementById('trip-form-title');
+    const tripInput = document.getElementById('trip-id');
+    const routeSel = document.getElementById('trip-route-select');
+    const dirSel = document.getElementById('trip-direction');
+    const shapeSel = document.getElementById('trip-shape-select');
+    const headsignInput = document.getElementById('trip-headsign');
+
+    if (title) title.textContent = `✏️ Modificar Viaje [${tripId}]`;
+    if (tripInput) {
+      tripInput.value = t.trip_id;
+      tripInput.readOnly = true;
+    }
+    if (routeSel) routeSel.value = t.route_id;
+    if (dirSel) dirSel.value = t.direction_id;
+    if (shapeSel) shapeSel.value = t.shape_id || '';
+    if (headsignInput) headsignInput.value = t.trip_headsign || '';
+
+    if (form) {
+      form.style.display = 'block';
+      form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  };
+
   function setupTripForm() {
     const form = document.getElementById('form-gtfs-trip');
-    if (!form) return;
+    const btnShowAdd = document.getElementById('btn-show-add-trip');
+    const btnCancel = document.getElementById('btn-cancel-trip');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const tripId = document.getElementById('trip-id')?.value.trim().toUpperCase();
-      const routeId = document.getElementById('trip-route-select')?.value;
-      const dirId = parseInt(document.getElementById('trip-direction')?.value || '0', 10);
-      const shapeId = document.getElementById('trip-shape-select')?.value;
-      const headsign = document.getElementById('trip-headsign')?.value.trim();
-
-      if (!tripId || !routeId) return;
-
-      try {
-        const res = await fetch('/api/gtfs/trips', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            trip_id: tripId,
-            route_id: routeId,
-            direction_id: dirId,
-            shape_id: shapeId,
-            trip_headsign: headsign
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          if (document.getElementById('trip-id')) document.getElementById('trip-id').value = '';
-          if (document.getElementById('trip-headsign')) document.getElementById('trip-headsign').value = '';
-          await loadTrips();
-        } else {
-          alert(`❌ Error al registrar viaje: ${data.error}`);
+    if (btnShowAdd) {
+      btnShowAdd.addEventListener('click', () => {
+        editingTripId = null;
+        const title = document.getElementById('trip-form-title');
+        const tripInput = document.getElementById('trip-id');
+        const headsignInput = document.getElementById('trip-headsign');
+        if (title) title.textContent = '➕ Registrar Plantilla de Viaje';
+        if (tripInput) {
+          tripInput.value = '';
+          tripInput.readOnly = false;
         }
-      } catch (err) {
-        alert(`❌ Error de conexión: ${err.message}`);
-      }
-    });
+        if (headsignInput) headsignInput.value = '';
+        if (form) {
+          form.style.display = 'block';
+          if (tripInput) tripInput.focus();
+        }
+      });
+    }
+
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (form) form.style.display = 'none';
+        editingTripId = null;
+      });
+    }
+
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const tripId = document.getElementById('trip-id')?.value.trim().toUpperCase();
+        const routeId = document.getElementById('trip-route-select')?.value;
+        const dirId = parseInt(document.getElementById('trip-direction')?.value || '0', 10);
+        const shapeId = document.getElementById('trip-shape-select')?.value;
+        const headsign = document.getElementById('trip-headsign')?.value.trim();
+
+        if (!tripId || !routeId) return;
+
+        try {
+          const res = await fetch('/api/gtfs/trips', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              trip_id: tripId,
+              route_id: routeId,
+              direction_id: dirId,
+              shape_id: shapeId,
+              trip_headsign: headsign
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            form.style.display = 'none';
+            await loadTrips();
+          } else {
+            alert(`❌ Error al guardar viaje: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`❌ Error de conexión: ${err.message}`);
+        }
+      });
+    }
   }
 
   window.deleteGtfsTrip = async function(tripId) {
@@ -2114,18 +2431,26 @@
   };
 
   // --- FREQUENCIES ---
+  let allFrequencies = [];
+
   async function loadFrequencies() {
     if (allTrips.length === 0) await loadTrips();
+
+    const formFreq = document.getElementById('form-gtfs-freq');
+    if (formFreq) formFreq.style.display = 'none';
+    const idInput = document.getElementById('freq-id');
+    if (idInput) idInput.value = '';
 
     try {
       const res = await fetch('/api/gtfs/frequencies');
       const freqs = await res.json();
+      allFrequencies = freqs;
 
       const tbody = document.getElementById('gtfs-freq-table-body');
       if (!tbody) return;
 
       if (freqs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">No hay intervalos programados aún.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">No hay intervalos programados aún. Haga clic en "+ Añadir Intervalo" para programar.</td></tr>';
         return;
       }
 
@@ -2139,9 +2464,14 @@
             <td>${f.headway_secs} s</td>
             <td><span class="badge-gps-ok">Cada ${mins} min</span></td>
             <td>
-              <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsFrequency(${f.id})" title="Eliminar Intervalo">
-                🗑️ Eliminar
-              </button>
+              <div style="display: flex; gap: 0.35rem;">
+                <button class="tbl-action-btn" onclick="window.editGtfsFrequency(${f.id})" title="Modificar Intervalo" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+                  ✏️ Modificar
+                </button>
+                <button class="tbl-action-btn btn-delete" onclick="window.deleteGtfsFrequency(${f.id})" title="Eliminar Intervalo">
+                  🗑️
+                </button>
+              </div>
             </td>
           </tr>
         `;
@@ -2151,47 +2481,97 @@
     }
   }
 
+  window.editGtfsFrequency = function(id) {
+    const f = (allFrequencies || []).find(item => item.id === id);
+    if (!f) return;
+    const form = document.getElementById('form-gtfs-freq');
+    const title = document.getElementById('freq-form-title');
+    const idInput = document.getElementById('freq-id');
+    const tripSel = document.getElementById('freq-trip-select');
+    const startInput = document.getElementById('freq-start');
+    const endInput = document.getElementById('freq-end');
+    const minsInput = document.getElementById('freq-mins');
+
+    if (idInput) idInput.value = f.id;
+    if (title) title.textContent = `✏️ Modificar Intervalo [${f.trip_id}: ${f.start_time} - ${f.end_time}]`;
+    if (tripSel) tripSel.value = f.trip_id;
+    if (startInput) startInput.value = f.start_time.substring(0, 5);
+    if (endInput) endInput.value = f.end_time.substring(0, 5);
+    if (minsInput) minsInput.value = Math.round(f.headway_secs / 60);
+
+    if (form) {
+      form.style.display = 'block';
+      form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  };
+
   function setupFrequencyForm() {
     const form = document.getElementById('form-gtfs-freq');
-    if (!form) return;
+    const btnShowAdd = document.getElementById('btn-show-add-freq');
+    const btnCancel = document.getElementById('btn-cancel-freq');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const tripId = document.getElementById('freq-trip-select')?.value;
-      const startTime = document.getElementById('freq-start')?.value;
-      const endTime = document.getElementById('freq-end')?.value;
-      const mins = parseInt(document.getElementById('freq-mins')?.value || '5', 10);
+    if (btnShowAdd) {
+      btnShowAdd.addEventListener('click', () => {
+        const idInput = document.getElementById('freq-id');
+        const title = document.getElementById('freq-form-title');
+        if (idInput) idInput.value = '';
+        if (title) title.textContent = '➕ Añadir Nuevo Intervalo de Frecuencia';
+        if (form) form.style.display = 'block';
+      });
+    }
 
-      if (!tripId || !startTime || !endTime) {
-        alert('Complete todos los campos del intervalo.');
-        return;
-      }
+    if (btnCancel) {
+      btnCancel.addEventListener('click', () => {
+        if (form) form.style.display = 'none';
+        const idInput = document.getElementById('freq-id');
+        if (idInput) idInput.value = '';
+      });
+    }
 
-      const headwaySecs = mins * 60;
-      const formattedStart = startTime.length === 5 ? `${startTime}:00` : startTime;
-      const formattedEnd = endTime.length === 5 ? `${endTime}:00` : endTime;
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('freq-id')?.value;
+        const tripId = document.getElementById('freq-trip-select')?.value;
+        const startTime = document.getElementById('freq-start')?.value;
+        const endTime = document.getElementById('freq-end')?.value;
+        const mins = parseInt(document.getElementById('freq-mins')?.value || '5', 10);
 
-      try {
-        const res = await fetch('/api/gtfs/frequencies', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            trip_id: tripId,
-            start_time: formattedStart,
-            end_time: formattedEnd,
-            headway_secs: headwaySecs
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          await loadFrequencies();
-        } else {
-          alert(`❌ Error al guardar frecuencia: ${data.error}`);
+        if (!tripId || !startTime || !endTime) {
+          alert('Complete todos los campos del intervalo.');
+          return;
         }
-      } catch (err) {
-        alert(`❌ Error de conexión: ${err.message}`);
-      }
-    });
+
+        const headwaySecs = mins * 60;
+        const formattedStart = startTime.length === 5 ? `${startTime}:00` : startTime;
+        const formattedEnd = endTime.length === 5 ? `${endTime}:00` : endTime;
+
+        const payload = {
+          trip_id: tripId,
+          start_time: formattedStart,
+          end_time: formattedEnd,
+          headway_secs: headwaySecs
+        };
+        if (id) payload.id = parseInt(id, 10);
+
+        try {
+          const res = await fetch('/api/gtfs/frequencies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.success) {
+            form.style.display = 'none';
+            await loadFrequencies();
+          } else {
+            alert(`❌ Error al guardar frecuencia: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`❌ Error de conexión: ${err.message}`);
+        }
+      });
+    }
   }
 
   window.deleteGtfsFrequency = async function(id) {
