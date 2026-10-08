@@ -1180,6 +1180,10 @@
   let currentShapePoints = [];
   let shapePolyline = null;
   let referenceShapePolyline = null;
+  let referenceMarkersGroup = null;
+  let referenceShapePoints = [];
+  let currentReferenceShapeId = '';
+  let updateViewerActionButtons = null;
   let currentShapeDir = 0; // 0 = IDA, 1 = VUELTA
   let setShapeDirection = null;
   let updateReferenceShape = null;
@@ -1224,6 +1228,7 @@
     }).addTo(gtfsMap);
 
     shapeMarkersGroup = L.layerGroup().addTo(gtfsMap);
+    referenceMarkersGroup = L.layerGroup().addTo(gtfsMap);
     stopsLayerGroup = L.layerGroup().addTo(gtfsMap);
 
     // Evento de clic en mapa GTFS
@@ -1322,7 +1327,7 @@
     }
 
     // Funciones de control de Modo Visualizador vs Edición para Trazos
-    function enterShapeEditorMode(isNew = false) {
+    function enterShapeEditorMode(isNew = false, customShapeId = null, initialPoints = null) {
       isDrawingShape = true;
       const badge = document.getElementById('gtfs-shape-mode-badge');
       const viewerActions = document.getElementById('shape-actions-viewer');
@@ -1332,6 +1337,7 @@
       const nameContainer = document.getElementById('shape-name-edit-container');
       const nameInput = document.getElementById('gtfs-shape-name-input');
       const shapeSelect = document.getElementById('gtfs-shape-select');
+      const modeIndicator = document.getElementById('shape-editor-mode-indicator');
 
       if (badge) {
         badge.className = 'kpi-badge badge-warn';
@@ -1348,13 +1354,36 @@
           instructions.innerHTML = '➕ <strong>Nuevo Trazo:</strong> Escriba el nombre del trazo y haga clics en el mapa para trazarlo. Use <em>"Guardar"</em> al finalizar o <em>"Salir"</em> para cancelar.';
         }
         if (nameInput) {
-          const defaultRoute = (allRoutes && allRoutes[0]?.route_short_name) || 'IO33B';
-          const dirSuffix = currentShapeDir === 0 ? '_IDA' : '_VUELTA';
-          nameInput.value = `${defaultRoute}${dirSuffix}`;
+          if (customShapeId) {
+            nameInput.value = customShapeId;
+          } else {
+            const defaultRoute = (allRoutes && allRoutes[0]?.route_short_name) || 'IO33B';
+            const dirSuffix = currentShapeDir === 0 ? '_IDA' : '_VUELTA';
+            nameInput.value = `${defaultRoute}${dirSuffix}`;
+          }
           nameInput.focus();
         }
-        currentShapePoints = [];
+
+        if (initialPoints !== null && Array.isArray(initialPoints)) {
+          currentShapePoints = [...initialPoints];
+        } else {
+          currentShapePoints = [];
+        }
         renderShapePolylineAndStats();
+
+        if (modeIndicator) {
+          if (currentShapeDir === 1) {
+            modeIndicator.innerHTML = '🟣 <strong>Creando Trazo de Vuelta:</strong> Haga clics en el mapa para trazar el regreso por sus calles correspondientes. Use las herramientas del Asistente abajo para conectarse con la Ida.';
+            modeIndicator.style.background = 'rgba(139, 92, 246, 0.12)';
+            modeIndicator.style.borderColor = 'rgba(139, 92, 246, 0.35)';
+            modeIndicator.style.color = '#c4b5fd';
+          } else {
+            modeIndicator.innerHTML = '🟢 <strong>Creando Nuevo Trazo:</strong> Haga clics sobre el mapa para fijar el recorrido de la ruta.';
+            modeIndicator.style.background = 'rgba(59, 130, 246, 0.12)';
+            modeIndicator.style.borderColor = 'rgba(59, 130, 246, 0.35)';
+            modeIndicator.style.color = '#93c5fd';
+          }
+        }
       } else {
         const curId = shapeSelect ? shapeSelect.value : '';
         editingOldShapeId = curId;
@@ -1364,6 +1393,12 @@
         if (nameInput) {
           nameInput.value = curId;
           nameInput.focus();
+        }
+        if (modeIndicator) {
+          modeIndicator.innerHTML = `⚠️ <strong>Modificando Trazo Existente: "${curId}"</strong>.<br>Los clics sobre el mapa agregarán puntos a este mismo trazo.<br>Si desea dibujar la <strong>Vuelta</strong>, pulse <em>"❌ Salir"</em> y use <em>"🔁 Crear Vuelta desde esta Ida"</em>.`;
+          modeIndicator.style.background = 'rgba(234, 179, 8, 0.15)';
+          modeIndicator.style.borderColor = 'rgba(234, 179, 8, 0.4)';
+          modeIndicator.style.color = '#fef08a';
         }
       }
     }
@@ -1391,8 +1426,18 @@
         instructions.innerHTML = '💡 <strong>Modo Visualizador:</strong> El mapa está en modo lectura para inspeccionar trazos sin modificarlos por accidente. Use <em>"➕ Nuevo Trazo"</em> o <em>"✏️ Modificar"</em> para habilitar la edición.';
       }
 
+      if (referenceMarkersGroup) {
+        referenceMarkersGroup.clearLayers();
+      }
+      if (referenceShapePolyline) {
+        referenceShapePolyline.setLatLngs([]);
+      }
+
       if (shapeSelect && shapeSelect.value) {
         await loadSelectedShape(shapeSelect.value);
+      }
+      if (typeof updateViewerActionButtons === 'function') {
+        updateViewerActionButtons(shapeSelect ? shapeSelect.value : null);
       }
     }
 
@@ -1494,11 +1539,87 @@
       }
     };
 
-    // Botones de Acción del Trazo
+    // Botones de Acción del Trazo (Modo Visualizador)
+    const btnActionCreateReturnShape = document.getElementById('btn-action-create-return-shape');
     const btnActionAddShape = document.getElementById('btn-action-add-shape');
     const btnActionEditShape = document.getElementById('btn-action-edit-shape');
     const btnActionDeleteShape = document.getElementById('btn-action-delete-shape');
     const btnCancelEditShape = document.getElementById('btn-cancel-edit-shape');
+
+    // Función para actualizar el texto y visibilidad de los botones del visualizador
+    updateViewerActionButtons = function(selectedShapeId) {
+      if (!btnActionCreateReturnShape) return;
+      if (!selectedShapeId) {
+        btnActionCreateReturnShape.style.display = 'none';
+        return;
+      }
+      btnActionCreateReturnShape.style.display = 'flex';
+      if (selectedShapeId.endsWith('_IDA')) {
+        btnActionCreateReturnShape.innerHTML = `🔁 Crear Vuelta desde "${selectedShapeId}"`;
+        btnActionCreateReturnShape.title = `Inicia un nuevo trazo de Vuelta tomando automáticamente como inicio el punto final de "${selectedShapeId}".`;
+      } else {
+        btnActionCreateReturnShape.innerHTML = `🔁 Crear Variante / Vuelta desde "${selectedShapeId}"`;
+        btnActionCreateReturnShape.title = `Inicia un nuevo trazo complementario tomando como referencia "${selectedShapeId}".`;
+      }
+    };
+
+    if (btnActionCreateReturnShape) {
+      btnActionCreateReturnShape.addEventListener('click', async () => {
+        const sel = document.getElementById('gtfs-shape-select');
+        const curId = sel ? sel.value : '';
+        if (!curId) {
+          alert('Seleccione un trazo primero.');
+          return;
+        }
+
+        let pts = [];
+        try {
+          const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(curId)}`);
+          pts = await res.json();
+        } catch (e) {
+          alert(`Error al cargar puntos de "${curId}": ${e.message}`);
+          return;
+        }
+
+        if (!Array.isArray(pts) || pts.length === 0) {
+          alert(`El trazo "${curId}" no contiene puntos geométricos. Trace y guarde la Ida primero.`);
+          return;
+        }
+
+        // Definir nuevo ID para la Vuelta
+        let newShapeId = '';
+        if (curId.endsWith('_IDA')) {
+          newShapeId = curId.replace(/_IDA$/, '_VUELTA');
+        } else if (curId.endsWith('_VTA') || curId.endsWith('_VUELTA')) {
+          newShapeId = curId + '_2';
+        } else {
+          newShapeId = curId + '_VUELTA';
+        }
+
+        // Guardar referencia
+        currentReferenceShapeId = curId;
+        referenceShapePoints = pts.map(p => ({
+          lat: p.shape_pt_lat,
+          lon: p.shape_pt_lon
+        }));
+
+        // El primer punto de la Vuelta es el último punto de la Ida (Cabecera Retorno B)
+        const lastPt = referenceShapePoints[referenceShapePoints.length - 1];
+        const initialPoints = [{ lat: lastPt.lat, lon: lastPt.lon }];
+
+        // Entrar en modo nuevo trazo de Vuelta
+        setShapeDirection(1);
+        enterShapeEditorMode(true, newShapeId, initialPoints);
+
+        // Actualizar visualización del trazo de referencia con marcadores interactivos
+        await updateReferenceShape(curId);
+
+        // Enfocar mapa en el punto de partida (Cabecera Retorno B)
+        if (gtfsMap) {
+          gtfsMap.setView([lastPt.lat, lastPt.lon], 16);
+        }
+      });
+    }
 
     if (btnActionAddShape) {
       btnActionAddShape.addEventListener('click', () => {
@@ -1577,51 +1698,230 @@
       });
     }
 
-    // --- Sentido del Trazo (IDA vs VUELTA) y Herramientas Inteligentes ---
+    // --- Sentido del Trazo (IDA vs VUELTA) y Herramientas Inteligentes de Conexión ---
     currentShapeDir = 0; // 0 = IDA, 1 = VUELTA
     const btnShapeDir0 = document.getElementById('btn-shape-dir-0');
     const btnShapeDir1 = document.getElementById('btn-shape-dir-1');
     const btnCopyInvert = document.getElementById('btn-copy-invert-shape');
     const chkShowRef = document.getElementById('chk-show-reference-shape');
+    const btnRefStartAtEnd = document.getElementById('btn-ref-start-at-end');
+    const btnRefEndAtStart = document.getElementById('btn-ref-end-at-start');
 
-    updateReferenceShape = async function() {
+    // Función para renderizar marcadores interactivos clave en los extremos del trazo guía
+    function renderReferenceKeyMarkers(refId, pts) {
+      if (!referenceMarkersGroup) return;
+      referenceMarkersGroup.clearLayers();
+      if (!pts || pts.length === 0) return;
+
+      const firstPt = pts[0];
+      const lastPt = pts[pts.length - 1];
+
+      // Marcador 🟢 Origen A (Punto 1 de la referencia)
+      const startMarker = L.circleMarker([firstPt.lat, firstPt.lon], {
+        radius: 8,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#10b981',
+        fillOpacity: 0.95
+      }).addTo(referenceMarkersGroup);
+
+      startMarker.bindTooltip(`🟢 Inicio de "${refId}" (Origen A)<br>Clic para cerrar el circuito aquí`, {
+        direction: 'top',
+        offset: [0, -8]
+      });
+
+      startMarker.bindPopup(`
+        <div style="font-family: var(--font-sans); font-size: 0.8rem; min-width: 200px;">
+          <div style="font-weight: 700; color: #10b981;">🟢 Cabecera de Origen A</div>
+          <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
+            Punto #1 de <strong>${refId}</strong><br>
+            Lat: ${firstPt.lat.toFixed(6)}, Lon: ${firstPt.lon.toFixed(6)}
+          </div>
+          <div style="margin-top: 8px;">
+            <button type="button" class="btn btn-primary" onclick="window.connectToRefStart()" style="padding: 3px 8px; font-size: 0.72rem; width: 100%; justify-content: center; background: #059669; border-color: #047857; cursor: pointer;">
+              🏁 Conectar trazo aquí (Cerrar Circuito)
+            </button>
+          </div>
+        </div>
+      `);
+
+      // Marcador 🏁 Cabecera de Retorno B (Último punto de la referencia)
+      const endMarker = L.circleMarker([lastPt.lat, lastPt.lon], {
+        radius: 8,
+        color: '#ffffff',
+        weight: 2,
+        fillColor: '#8b5cf6',
+        fillOpacity: 0.95
+      }).addTo(referenceMarkersGroup);
+
+      endMarker.bindTooltip(`🏁 Fin de "${refId}" (Cabecera B)<br>Clic para iniciar el regreso aquí`, {
+        direction: 'top',
+        offset: [0, -8]
+      });
+
+      endMarker.bindPopup(`
+        <div style="font-family: var(--font-sans); font-size: 0.8rem; min-width: 200px;">
+          <div style="font-weight: 700; color: #8b5cf6;">🏁 Cabecera de Retorno B</div>
+          <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
+            Último punto de <strong>${refId}</strong><br>
+            Lat: ${lastPt.lat.toFixed(6)}, Lon: ${lastPt.lon.toFixed(6)}
+          </div>
+          <div style="margin-top: 8px;">
+            <button type="button" class="btn btn-primary" onclick="window.startAtRefEnd()" style="padding: 3px 8px; font-size: 0.72rem; width: 100%; justify-content: center; background: #7c3aed; border-color: #6d28d9; cursor: pointer;">
+              📍 Iniciar Recorrido aquí (Punto 1)
+            </button>
+          </div>
+        </div>
+      `);
+    }
+
+    // Funciones globales expuestas para los popups del mapa y botones de conexión
+    window.startAtRefEnd = function() {
+      if (!referenceShapePoints || referenceShapePoints.length === 0) {
+        alert('No hay puntos disponibles en el trazo de referencia.');
+        return;
+      }
+      const lastPt = referenceShapePoints[referenceShapePoints.length - 1];
+      if (currentShapePoints.length === 0) {
+        currentShapePoints.push({ lat: lastPt.lat, lon: lastPt.lon });
+      } else {
+        const p1 = currentShapePoints[0];
+        if (Math.abs(p1.lat - lastPt.lat) < 0.00001 && Math.abs(p1.lon - lastPt.lon) < 0.00001) {
+          alert('El trazo actual ya tiene como punto inicial la Cabecera de Retorno.');
+          return;
+        }
+        if (confirm('¿Desea fijar el punto final de la Ida como el PRIMER punto (origen) de este trazo?')) {
+          currentShapePoints.unshift({ lat: lastPt.lat, lon: lastPt.lon });
+        } else {
+          return;
+        }
+      }
+      renderShapePolylineAndStats();
+      if (gtfsMap) {
+        gtfsMap.closePopup();
+        gtfsMap.setView([lastPt.lat, lastPt.lon], 16);
+      }
+    };
+
+    window.connectToRefStart = function() {
+      if (!referenceShapePoints || referenceShapePoints.length === 0) {
+        alert('No hay puntos disponibles en el trazo de referencia.');
+        return;
+      }
+      const firstPt = referenceShapePoints[0];
+      if (currentShapePoints.length === 0) {
+        alert('Trace primero algunos puntos del recorrido antes de cerrar el circuito de vuelta.');
+        return;
+      }
+      const lastCur = currentShapePoints[currentShapePoints.length - 1];
+      if (Math.abs(lastCur.lat - firstPt.lat) < 0.00001 && Math.abs(lastCur.lon - firstPt.lon) < 0.00001) {
+        alert('El trazo ya finaliza en el punto de origen.');
+        return;
+      }
+      currentShapePoints.push({ lat: firstPt.lat, lon: firstPt.lon });
+      renderShapePolylineAndStats();
+      if (gtfsMap) {
+        gtfsMap.closePopup();
+        gtfsMap.setView([firstPt.lat, firstPt.lon], 16);
+      }
+    };
+
+    if (btnRefStartAtEnd) {
+      btnRefStartAtEnd.addEventListener('click', () => window.startAtRefEnd());
+    }
+
+    if (btnRefEndAtStart) {
+      btnRefEndAtStart.addEventListener('click', () => window.connectToRefStart());
+    }
+
+    updateReferenceShape = async function(explicitRefId = null) {
       if (!referenceShapePolyline) return;
       if (!chkShowRef || !chkShowRef.checked) {
         referenceShapePolyline.setLatLngs([]);
+        if (referenceMarkersGroup) referenceMarkersGroup.clearLayers();
         return;
       }
 
+      const nameInput = document.getElementById('gtfs-shape-name-input');
       const sel = document.getElementById('gtfs-shape-select');
-      const inputNew = document.getElementById('gtfs-shape-new-input');
-      let curId = inputNew && inputNew.style.display !== 'none'
-        ? inputNew.value.trim().toUpperCase()
+      let curId = nameInput && nameInput.style.display !== 'none'
+        ? nameInput.value.trim().toUpperCase()
         : (sel ? sel.value : '');
 
-      let targetRefId = '';
-      if (currentShapeDir === 1) {
-        targetRefId = curId.replace(/_VUELTA$/, '_IDA').replace(/_VTA$/, '_IDA');
-        if (!targetRefId || targetRefId === curId) targetRefId = 'IO33B_IDA';
-        referenceShapePolyline.setStyle({ color: '#0284c7' });
-      } else {
-        targetRefId = curId.replace(/_IDA$/, '_VUELTA');
-        if (!targetRefId || targetRefId === curId) targetRefId = 'IO33B_VUELTA';
-        referenceShapePolyline.setStyle({ color: '#8b5cf6' });
+      let targetRefId = explicitRefId || currentReferenceShapeId;
+      if (!targetRefId) {
+        if (currentShapeDir === 1) {
+          targetRefId = curId.replace(/_VUELTA$/, '_IDA').replace(/_VTA$/, '_IDA');
+          if (!targetRefId || targetRefId === curId) {
+            const foundIda = allShapes.find(s => s.shape_id.endsWith('_IDA'));
+            targetRefId = foundIda ? foundIda.shape_id : 'IO33B_IDA';
+          }
+        } else {
+          targetRefId = curId.replace(/_IDA$/, '_VUELTA');
+          if (!targetRefId || targetRefId === curId) {
+            const foundVta = allShapes.find(s => s.shape_id.endsWith('_VUELTA'));
+            targetRefId = foundVta ? foundVta.shape_id : 'IO33B_VUELTA';
+          }
+        }
       }
+
+      currentReferenceShapeId = targetRefId;
+      const refBadge = document.getElementById('ref-shape-name-badge');
 
       try {
         const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(targetRefId)}`);
         const pts = await res.json();
         if (Array.isArray(pts) && pts.length > 0) {
-          referenceShapePolyline.setLatLngs(pts.map(p => [p.shape_pt_lat, p.shape_pt_lon]));
+          referenceShapePoints = pts.map(p => ({
+            lat: p.shape_pt_lat,
+            lon: p.shape_pt_lon
+          }));
+          referenceShapePolyline.setLatLngs(referenceShapePoints.map(p => [p.lat, p.lon]));
+          referenceShapePolyline.setStyle({
+            color: currentShapeDir === 1 ? '#0ea5e9' : '#a855f7',
+            dashArray: '6, 8',
+            opacity: 0.55,
+            weight: 3.5
+          });
+
+          if (refBadge) {
+            refBadge.textContent = `Guía: ${targetRefId} (${pts.length} pts)`;
+            refBadge.className = 'kpi-badge badge-ok';
+          }
+
+          renderReferenceKeyMarkers(targetRefId, referenceShapePoints);
         } else {
+          referenceShapePoints = [];
           referenceShapePolyline.setLatLngs([]);
+          if (referenceMarkersGroup) referenceMarkersGroup.clearLayers();
+          if (refBadge) {
+            refBadge.textContent = 'Sin trazo guía';
+            refBadge.className = 'kpi-badge';
+          }
         }
       } catch (e) {
+        referenceShapePoints = [];
         referenceShapePolyline.setLatLngs([]);
+        if (referenceMarkersGroup) referenceMarkersGroup.clearLayers();
       }
     };
 
     setShapeDirection = function(dir) {
+      if (isDrawingShape && editingOldShapeId && dir === 1 && editingOldShapeId.endsWith('_IDA')) {
+        const wantNew = confirm(
+          `Está editando el trazo de Ida "${editingOldShapeId}".\n\n` +
+          `¿Desea crear un NUEVO trazo de Vuelta a partir de esta Ida (Recomendado)?\n\n` +
+          `• Pulse [Aceptar] para crear un nuevo trazo de Vuelta conservando intacta la Ida.\n` +
+          `• Pulse [Cancelar] si solo desea cambiar el sentido de este trazo existente.`
+        );
+        if (wantNew) {
+          if (btnActionCreateReturnShape) {
+            btnActionCreateReturnShape.click();
+            return;
+          }
+        }
+      }
+
       currentShapeDir = dir;
       if (btnShapeDir0) btnShapeDir0.classList.toggle('active', dir === 0);
       if (btnShapeDir1) btnShapeDir1.classList.toggle('active', dir === 1);
@@ -1630,20 +1930,16 @@
         shapePolyline.setStyle({ color: dir === 0 ? '#0284c7' : '#8b5cf6' });
       }
 
-      if (btnCopyInvert) {
-        btnCopyInvert.style.display = dir === 1 ? 'flex' : 'none';
-      }
-
-      const inputNew = document.getElementById('gtfs-shape-new-input');
-      if (inputNew && inputNew.style.display !== 'none') {
-        let val = inputNew.value.trim().toUpperCase();
+      const nameInput = document.getElementById('gtfs-shape-name-input');
+      if (nameInput && nameInput.style.display !== 'none' && !editingOldShapeId) {
+        let val = nameInput.value.trim().toUpperCase();
         if (!val) {
           const firstRoute = allRoutes[0]?.route_short_name || 'IO33B';
-          inputNew.value = dir === 0 ? `${firstRoute}_IDA` : `${firstRoute}_VUELTA`;
+          nameInput.value = dir === 0 ? `${firstRoute}_IDA` : `${firstRoute}_VUELTA`;
         } else if (val.endsWith('_IDA') && dir === 1) {
-          inputNew.value = val.replace(/_IDA$/, '_VUELTA');
+          nameInput.value = val.replace(/_IDA$/, '_VUELTA');
         } else if (val.endsWith('_VUELTA') && dir === 0) {
-          inputNew.value = val.replace(/_VUELTA$/, '_IDA');
+          nameInput.value = val.replace(/_VUELTA$/, '_IDA');
         }
       }
 
@@ -1656,42 +1952,23 @@
 
     if (btnCopyInvert) {
       btnCopyInvert.addEventListener('click', async () => {
-        const sel = document.getElementById('gtfs-shape-select');
-        const inputNew = document.getElementById('gtfs-shape-new-input');
-        let curId = inputNew && inputNew.style.display !== 'none'
-          ? inputNew.value.trim().toUpperCase()
-          : (sel ? sel.value : '');
-
-        let baseId = curId.replace(/_VUELTA$/, '').replace(/_VTA$/, '').replace(/_IDA$/, '');
-        let targetIda = baseId ? `${baseId}_IDA` : 'IO33B_IDA';
-
-        try {
-          const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(targetIda)}`);
-          const pts = await res.json();
-          if (!pts || pts.length === 0) {
-            alert(`No se encontraron puntos para el trazo de IDA "${targetIda}". Trazar y guardar la IDA primero para usarla como base.`);
-            return;
-          }
-
-          currentShapePoints = [...pts].reverse().map(p => ({
-            lat: p.shape_pt_lat,
-            lon: p.shape_pt_lon
-          }));
-
-          renderShapePolylineAndStats();
-          if (shapePolyline && gtfsMap) {
-            const bounds = shapePolyline.getBounds();
-            if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
-          }
-
-          if (inputNew && inputNew.style.display !== 'none') {
-            inputNew.value = `${baseId || 'IO33B'}_VUELTA`;
-          }
-
-          alert(`✅ ¡Trazo de VUELTA generado exitosamente!\n\nSe copiaron e invirtieron ${currentShapePoints.length} puntos de "${targetIda}".\nAhora puede hacer clics en el mapa para extenderlo o modificar tramos que difieran.`);
-        } catch (err) {
-          alert(`Error al generar trazo invertido: ${err.message}`);
+        if (!referenceShapePoints || referenceShapePoints.length === 0) {
+          alert('No hay puntos en el trazo de referencia para copiar e invertir.');
+          return;
         }
+
+        currentShapePoints = referenceShapePoints.slice().reverse().map(p => ({
+          lat: p.lat,
+          lon: p.lon
+        }));
+
+        renderShapePolylineAndStats();
+        if (shapePolyline && gtfsMap) {
+          const bounds = shapePolyline.getBounds();
+          if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+        }
+
+        alert(`✅ ¡Trazo de VUELTA generado exitosamente!\n\nSe copiaron e invirtieron ${currentShapePoints.length} puntos de "${currentReferenceShapeId}".\nAhora puede hacer clics en el mapa para extenderlo o modificar tramos que difieran.`);
       });
     }
 
@@ -1713,6 +1990,12 @@
           return;
         }
 
+        if (!editingOldShapeId && allShapes.some(s => s.shape_id === shapeId)) {
+          if (!confirm(`Ya existe un trazo con el identificador "${shapeId}" en SQLite.\n\n¿Desea sobreescribir sus puntos geométricos?`)) {
+            return;
+          }
+        }
+
         try {
           const payload = {
             shape_id: shapeId,
@@ -1732,7 +2015,7 @@
             if (payload.old_shape_id) {
               alert(`✅ Trazo guardado exitosamente.\nSe renombró de "${payload.old_shape_id}" a "${shapeId}" y se actualizaron los viajes vinculados.`);
             } else {
-              alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos.`);
+              alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos en SQLite.`);
             }
             await loadShapeList(shapeId);
             await exitShapeEditorMode();
@@ -1944,6 +2227,9 @@
       } else {
         currentShapePoints = [];
         renderShapePolylineAndStats();
+        if (typeof updateViewerActionButtons === 'function') {
+          updateViewerActionButtons(null);
+        }
       }
     } catch (e) {
       console.error('[GTFS] Error cargando lista de trazos:', e);
@@ -1974,6 +2260,9 @@
       }
       if (typeof updateReferenceShape === 'function') {
         updateReferenceShape();
+      }
+      if (typeof updateViewerActionButtons === 'function') {
+        updateViewerActionButtons(shapeId);
       }
     } catch (e) {
       console.error('[GTFS] Error cargando trazo:', e);

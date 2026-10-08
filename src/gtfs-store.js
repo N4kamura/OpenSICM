@@ -17,23 +17,24 @@ class GtfsStore {
     try {
       const agencyCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_agency').get().total;
       if (agencyCount === 0) {
-        console.log('[GtfsStore] Inicializando datos GTFS de demostración para Lima...');
-
-        // 1. Empresa / Agencia
         db.prepare(`
           INSERT INTO gtfs_agency (agency_id, agency_name, agency_url, agency_timezone)
           VALUES (?, ?, ?, ?)
         `).run('EMP_LIMA', 'Empresa de Transportes Lima & Callao S.A.', 'https://atu.gob.pe', 'America/Lima');
+      }
 
-        // 2. Rutas
+      const routesCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_routes').get().total;
+      if (routesCount === 0) {
         const insertRoute = db.prepare(`
           INSERT INTO gtfs_routes (route_id, agency_id, route_short_name, route_long_name, route_type)
           VALUES (?, ?, ?, ?, ?)
         `);
         insertRoute.run('IO33B', 'EMP_LIMA', 'IO33B', 'Ventanilla - Javier Prado - V.E.S.', 3);
         insertRoute.run('CR42', 'EMP_LIMA', 'CR42', 'Callao - La Marina - Av. Brasil', 3);
+      }
 
-        // 3. Paraderos y Terminales iniciales
+      const stopsCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_stops').get().total;
+      if (stopsCount === 0) {
         const insertStop = db.prepare(`
           INSERT INTO gtfs_stops (stop_id, stop_name, stop_lat, stop_lon, location_type)
           VALUES (?, ?, ?, ?, ?)
@@ -43,8 +44,10 @@ class GtfsStore {
         insertStop.run('PAR_TREBOL_JP', 'Paradero Trébol Javier Prado', -12.083812, -76.971038, 0);
         insertStop.run('PAR_VIA_EXPRESA', 'Paradero Vía Expresa / Canaval Moreyra', -12.091215, -77.026478, 0);
         insertStop.run('TERM_VES', 'Terminal Sur Villa El Salvador', -12.185400, -76.994100, 1);
+      }
 
-        // 4. Trazo geométrico de demostración (shapes.txt - Tramo Javier Prado)
+      const shapesCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_shapes').get().total;
+      if (shapesCount === 0) {
         const insertShape = db.prepare(`
           INSERT INTO gtfs_shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence)
           VALUES (?, ?, ?, ?)
@@ -60,16 +63,20 @@ class GtfsStore {
         samplePoints.forEach((pt, idx) => {
           insertShape.run('IO33B_IDA', pt[0], pt[1], idx + 1);
         });
+      }
 
-        // 5. Estructura de Viajes (trips.txt)
+      const tripsCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_trips').get().total;
+      if (tripsCount === 0) {
         const insertTrip = db.prepare(`
           INSERT INTO gtfs_trips (trip_id, route_id, shape_id, direction_id, trip_headsign)
           VALUES (?, ?, ?, ?, ?)
         `);
         insertTrip.run('IO33B_IDA_PATTERN', 'IO33B', 'IO33B_IDA', 0, 'Hacia Villa El Salvador');
         insertTrip.run('IO33B_VTA_PATTERN', 'IO33B', 'IO33B_VUELTA', 1, 'Hacia Ventanilla');
+      }
 
-        // 6. Frecuencias de Despacho (frequencies.txt)
+      const freqsCount = db.prepare('SELECT COUNT(*) AS total FROM gtfs_frequencies').get().total;
+      if (freqsCount === 0) {
         const insertFreq = db.prepare(`
           INSERT INTO gtfs_frequencies (trip_id, start_time, end_time, headway_secs)
           VALUES (?, ?, ?, ?)

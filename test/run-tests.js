@@ -311,6 +311,43 @@ async function runTests() {
     gtfsStore.deleteShape('TEST_RENAME_B');
   });
 
+  test('gtfsStore: permite trazar Ida y Vuelta independientes conectando fin e inicio', () => {
+    // 1. Ida: desde Punto A (-12.08, -76.97) hasta Punto B (-12.09, -77.02)
+    const ptsIda = [
+      { lat: -12.083812, lon: -76.971038 },
+      { lat: -12.087200, lon: -76.978200 },
+      { lat: -12.091215, lon: -77.026478 }
+    ];
+    gtfsStore.saveShape('TEST_IDA', ptsIda);
+
+    // 2. Vuelta: inicia en el último punto de la Ida (B) y finaliza en el primer punto (A)
+    const lastIdaPt = ptsIda[ptsIda.length - 1];
+    const firstIdaPt = ptsIda[0];
+    const ptsVuelta = [
+      { lat: lastIdaPt.lat, lon: lastIdaPt.lon },
+      { lat: -12.088000, lon: -76.980000 },
+      { lat: firstIdaPt.lat, lon: firstIdaPt.lon }
+    ];
+    gtfsStore.saveShape('TEST_VUELTA', ptsVuelta);
+
+    const savedIda = gtfsStore.getShapePoints('TEST_IDA');
+    const savedVuelta = gtfsStore.getShapePoints('TEST_VUELTA');
+
+    // Verificar que la IDA quedó intacta
+    assert.strictEqual(savedIda.length, 3);
+    assert.strictEqual(savedIda[0].shape_pt_lat, ptsIda[0].lat);
+    assert.strictEqual(savedIda[2].shape_pt_lat, ptsIda[2].lat);
+
+    // Verificar que la VUELTA existe independientemente
+    assert.strictEqual(savedVuelta.length, 3);
+    assert.strictEqual(savedVuelta[0].shape_pt_lat, lastIdaPt.lat);
+    assert.strictEqual(savedVuelta[2].shape_pt_lat, firstIdaPt.lat);
+
+    // Limpieza
+    gtfsStore.deleteShape('TEST_IDA');
+    gtfsStore.deleteShape('TEST_VUELTA');
+  });
+
   test('gtfsStore: gestiona frecuencias de despacho (frequencies.txt)', () => {
     const saveRes = gtfsStore.saveFrequency({
       trip_id: 'IO33B_IDA_PATTERN',

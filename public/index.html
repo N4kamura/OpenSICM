@@ -581,8 +581,12 @@
 
                 <!-- Botones de Acción en Modo Visualizador -->
                 <div id="shape-actions-viewer" style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+                  <!-- Botón destacado para crear Vuelta a partir de la Ida -->
+                  <button type="button" class="btn btn-primary" id="btn-action-create-return-shape" style="justify-content: center; font-size: 0.8rem; background: #7c3aed; border-color: #6d28d9; color: #fff;" title="Inicia un nuevo trazo de Vuelta tomando automáticamente como punto de partida el fin de este trazo de Ida">
+                    🔁 Crear Vuelta desde esta Ida
+                  </button>
                   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem;">
-                    <button type="button" class="btn btn-primary" id="btn-action-add-shape" style="justify-content: center; font-size: 0.78rem;">
+                    <button type="button" class="btn btn-secondary" id="btn-action-add-shape" style="justify-content: center; font-size: 0.78rem;">
                       ➕ Nuevo Trazo
                     </button>
                     <button type="button" class="btn btn-secondary" id="btn-action-edit-shape" style="justify-content: center; font-size: 0.78rem; border-color: #38bdf8; color: #38bdf8;">
@@ -596,6 +600,11 @@
 
                 <!-- Panel de Controles cuando se está en Modo Edición / Dibujo -->
                 <div id="shape-editor-controls" style="display: none; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                  <!-- Indicador de Acción Activa -->
+                  <div id="shape-editor-mode-indicator" style="background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.72rem; color: #93c5fd; line-height: 1.35;">
+                    ➕ <strong>Nuevo Trazo:</strong> Haga clics sobre el mapa para fijar el recorrido.
+                  </div>
+
                   <!-- Selector de Sentido (Ida vs Vuelta) -->
                   <div class="form-field">
                     <label>Sentido del Recorrido</label>
@@ -609,17 +618,32 @@
                     </div>
                   </div>
 
-                  <button type="button" class="btn btn-secondary" id="btn-copy-invert-shape" style="justify-content: center; font-size: 0.76rem; border-color: #8b5cf6; color: #c4b5fd; display: none;" title="Copia los puntos del trazo de IDA en orden inverso como base para la VUELTA">
-                    🔄 Copiar e Invertir Ida para Vuelta
-                  </button>
+                  <!-- Caja de Referencia y Conexión Inteligente de Puntos -->
+                  <div id="shape-ref-box" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.74rem;">
+                      <span style="font-weight: 600; color: #38bdf8;">🧭 Trazo de Referencia:</span>
+                      <span class="kpi-badge badge-ok" id="ref-shape-name-badge" style="font-size: 0.65rem;">Ninguno</span>
+                    </div>
 
-                  <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.74rem; color: var(--text-muted);">
-                    <input type="checkbox" id="chk-show-reference-shape" checked style="cursor: pointer;">
-                    <label for="chk-show-reference-shape" style="cursor: pointer;">👁️ Mostrar trazo complementario de guía</label>
-                  </div>
+                    <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; color: var(--text-muted);">
+                      <input type="checkbox" id="chk-show-reference-shape" checked style="cursor: pointer;">
+                      <label for="chk-show-reference-shape" style="cursor: pointer;">👁️ Mostrar trazo y puntos guía en mapa</label>
+                    </div>
 
-                  <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.72rem; color: #93c5fd;">
-                    📍 <strong>Modo Edición Activo:</strong> Haga clics sobre el mapa para trazar o extender puntos.
+                    <!-- Botones de conexión inteligente con la referencia -->
+                    <div id="ref-connection-tools" style="display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.2rem;">
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;">
+                        <button type="button" class="btn btn-secondary" id="btn-ref-start-at-end" style="justify-content: center; font-size: 0.72rem; padding: 4px 6px; border-color: #8b5cf6; color: #c4b5fd;" title="Usa el último punto del trazo de referencia como punto de partida">
+                          📍 Iniciar en Fin de Ida
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="btn-ref-end-at-start" style="justify-content: center; font-size: 0.72rem; padding: 4px 6px; border-color: #10b981; color: #6ee7b7;" title="Añade el primer punto del trazo de referencia para finalizar el circuito en el origen">
+                          🏁 Conectar a Inicio Ida
+                        </button>
+                      </div>
+                      <button type="button" class="btn btn-secondary" id="btn-copy-invert-shape" style="justify-content: center; font-size: 0.72rem; padding: 4px 6px; border-color: #64748b; color: #94a3b8;" title="Copia todos los puntos invertidos como borrador base">
+                        🔄 Copiar e Invertir Ida Completa
+                      </button>
+                    </div>
                   </div>
 
                   <div style="display: flex; gap: 0.5rem;">
