@@ -11,7 +11,7 @@
 
 ## ⚡ Características del Sistema
 
-* 🆓 **100% Software Libre:** Licencia MIT, sin costos de suscripción, sin límites de unidades ni bloqueos de proveedores.
+* 🔒 **Licencia No Comercial con Atribución (PolyForm Noncommercial 1.0.0):** Código auditable para uso no lucrativo con atribución obligatoria al autor. Prohibida la comercialización o lucro por parte de terceros.
 * 🪶 **Consumo Ultrabajo de Recursos:** Ejecutable en servidores VPS de muy bajo costo (~€3.79 a $5/mes en Hetzner CX22 o DigitalOcean) con un consumo típico de memoria RAM inferior a **150 MB**.
 * 📡 **Ingesta Multiprotocolo de Equipos GPS:**
   * **Teltonika:** Protocolo binario Codec 8 / Codec 8 Extended (FMB920, FMC130, FMB120, etc.) vía TCP con confirmación automática AVL reglamentaria.
@@ -356,4 +356,8 @@ OpenSICM/
 
 ## 📜 Licencia
 
-Este proyecto está bajo la **Licencia MIT**. Es de uso totalmente libre y gratuito para empresas de transporte, consorcios, desarrolladores y la comunidad en general.
+Este proyecto está protegido bajo la **Licencia PolyForm Noncommercial 1.0.0** (Uso No Comercial con Atribución Obligatoria).
+
+* **Permitido:** Uso, estudio, bifurcación (fork) y modificación con fines no comerciales ni lucrativos, siempre que se conserve la atribución y créditos expresos a **N4kamura**.
+* **Prohibido:** Queda estrictamente prohibida la comercialización, venta, revenda, prestación de servicios comerciales de pago (SaaS / pasarela de telemetría pagada) o lucro económico directo o indirecto por parte de terceros sin autorización previa por escrito del autor.
+* Consulta los términos completos en el archivo [**`LICENSE`**](file:///d:/Projects/OpenSICM/LICENSE).
