@@ -4,4 +4,6 @@ data/*.json
 data/*.db*
 !data/.gitkeep
 npm-debug.log*
+logs/
+*.log
 .DS_Store

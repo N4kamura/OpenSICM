@@ -323,6 +323,27 @@ class AtuForwarder extends EventEmitter {
     this.saveOfflineQueue();
     this.isFlushing = false;
     console.log(`[ATU Forwarder] Vaciado completado. Restan en cola: ${this.offlineQueue.length}`);
+    this.emit('queue_updated', { queueSize: this.offlineQueue.length });
+  }
+
+  /**
+   * Vacía y limpia la cola offline por completo
+   */
+  clearQueue() {
+    const prevCount = this.offlineQueue.length;
+    this.offlineQueue = [];
+    this.saveOfflineQueue();
+    console.log(`[ATU Forwarder] Cola offline vaciada por el usuario (${prevCount} tramas eliminadas).`);
+    this.emit('queue_cleared', { clearedCount: prevCount, queueSize: 0 });
+    this.emit('queue_updated', { queueSize: 0 });
+    return { clearedCount: prevCount, queueSize: 0 };
+  }
+
+  /**
+   * Obtiene una muestra de las tramas en cola
+   */
+  getQueue(limit = 50) {
+    return this.offlineQueue.slice(0, limit);
   }
 
   /**

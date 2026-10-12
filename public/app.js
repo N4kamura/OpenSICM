@@ -24,6 +24,12 @@
     kpiSearch: ''
   };
 
+  // Colecciones Maestras Compartidas (Accesibles en todo el frontend)
+  let allRoutes = [];
+  let allShapes = [];
+  let allTrips = [];
+  let allStops = [];
+
   // Inicialización de Mapa Leaflet
   const map = L.map('map', {
     zoomControl: true,
@@ -360,6 +366,20 @@
       }
     });
 
+    evtSource.addEventListener('atu_sent', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (typeof data.sentCount === 'number') {
+          elCountSent.textContent = data.sentCount;
+        } else {
+          const cur = parseInt(elCountSent.textContent || '0', 10);
+          elCountSent.textContent = cur + 1;
+        }
+      } catch (err) {
+        console.error('Error en evento atu_sent:', err);
+      }
+    });
+
     evtSource.addEventListener('atu_ack', (e) => {
       try {
         const ack = JSON.parse(e.data);
@@ -404,6 +424,34 @@
         appendLog(`🚨 ALERTA: ${alertObj.placa} - ${alertObj.detalles}`);
       } catch (err) {
         console.error('Error en evento kpi_alert:', err);
+      }
+    });
+
+    evtSource.addEventListener('queue_updated', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (typeof data.queueSize === 'number') {
+          if (elCountQueue) elCountQueue.textContent = data.queueSize;
+          if (elModalQueueCount) elModalQueueCount.textContent = data.queueSize;
+          if (elTestingQueueCount) elTestingQueueCount.textContent = data.queueSize;
+        }
+      } catch (err) {
+        console.error('Error en evento queue_updated:', err);
+      }
+    });
+
+    evtSource.addEventListener('queue_cleared', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (elCountQueue) elCountQueue.textContent = 0;
+        if (elModalQueueCount) elModalQueueCount.textContent = 0;
+        if (elTestingQueueCount) elTestingQueueCount.textContent = 0;
+        const msg = `// Cola vaciada (${data.clearedCount || 0} tramas eliminadas).`;
+        if (elModalQueueJson) elModalQueueJson.textContent = msg;
+        if (elTestingQueuePreview) elTestingQueuePreview.textContent = msg;
+        appendLog(`🗑️ Cola offline vaciada: ${data.clearedCount || 0} tramas eliminadas.`);
+      } catch (err) {
+        console.error('Error en evento queue_cleared:', err);
       }
     });
 
@@ -524,10 +572,17 @@
         } else if (targetId === 'view-testing') {
           populateTestUnits();
           updateTestPreview();
+          loadQueuePreview();
         } else if (targetId === 'view-gtfs') {
           initGtfsDesigner();
           setTimeout(() => {
-            if (gtfsMap) gtfsMap.invalidateSize();
+            if (gtfsMap) {
+              gtfsMap.invalidateSize();
+              if (shapePolyline && currentShapePoints.length > 0) {
+                const bounds = shapePolyline.getBounds();
+                if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+              }
+            }
           }, 200);
         }
       }
@@ -762,11 +817,17 @@
   }
 
   function renderRouteOptions(currentRuta) {
-    const routes = allRoutes && allRoutes.length > 0 ? allRoutes : [{ route_short_name: 'IO33B' }, { route_short_name: 'CR42' }];
+    let routeCodes = [];
+    if (allRoutes && allRoutes.length > 0) {
+      routeCodes = allRoutes.map(r => r.route_short_name || r.route_id);
+    } else {
+      const fleetRoutes = [...new Set(fleetData.map(u => u.ruta).filter(Boolean))];
+      routeCodes = fleetRoutes.length > 0 ? fleetRoutes : (currentRuta ? [currentRuta] : ['OM09']);
+    }
+
     let opts = '';
     let found = false;
-    routes.forEach(r => {
-      const code = r.route_short_name || r.route_id;
+    routeCodes.forEach(code => {
       const isSel = code === currentRuta;
       if (isSel) found = true;
       opts += `<option value="${code}" ${isSel ? 'selected' : ''}>${code}</option>`;
@@ -899,15 +960,18 @@
     // Poblar selector de rutas GTFS en el modal
     const rutaSelect = document.getElementById('unit-form-ruta-select');
     const rutaInput = document.getElementById('unit-form-ruta');
-    const currentRuta = unit ? unit.ruta : (allRoutes[0]?.route_short_name || 'IO33B');
+    const currentRuta = unit ? unit.ruta : (allRoutes[0]?.route_short_name || 'OM09');
 
     if (rutaSelect) {
-      const routes = allRoutes && allRoutes.length > 0 ? allRoutes : [{ route_short_name: 'IO33B' }, { route_short_name: 'CR42' }];
       let selectHtml = '<option value="">-- Seleccionar de Rutas GTFS --</option>';
-      routes.forEach(r => {
+      const routesList = (allRoutes && allRoutes.length > 0) 
+        ? allRoutes 
+        : [{ route_short_name: currentRuta, route_long_name: 'Ruta activa' }];
+
+      routesList.forEach(r => {
         const code = r.route_short_name || r.route_id;
         const sel = code === currentRuta ? 'selected' : '';
-        selectHtml += `<option value="${code}" ${sel}>${code} - ${r.route_long_name || ''}</option>`;
+        selectHtml += `<option value="${code}" ${sel}>${code}${r.route_long_name ? ` - ${r.route_long_name}` : ''}</option>`;
       });
       rutaSelect.innerHTML = selectHtml;
       rutaSelect.onchange = () => {
@@ -1041,6 +1105,60 @@
   const testResultBox = document.getElementById('test-result-box');
   const btnRunTestTrama = document.getElementById('btn-run-test-trama');
 
+  function applySelectedTestUnit() {
+    const placa = testUnitSelect ? testUnitSelect.value : '';
+    const lockNotice = document.getElementById('test-unit-lock-notice');
+
+    if (!placa) {
+      // Modo manual / personalizado: habilitar edición
+      if (testPlaca) { testPlaca.readOnly = false; testPlaca.classList.remove('input-locked'); }
+      if (testRuta) { testRuta.readOnly = false; testRuta.classList.remove('input-locked'); }
+      if (testImei) { testImei.readOnly = false; testImei.classList.remove('input-locked'); }
+      if (testModelo) { testModelo.disabled = false; testModelo.classList.remove('input-locked'); }
+      if (lockNotice) {
+        lockNotice.style.display = 'block';
+        lockNotice.style.color = '#94a3b8';
+        lockNotice.style.background = 'rgba(255, 255, 255, 0.05)';
+        lockNotice.style.borderLeftColor = '#64748b';
+        lockNotice.textContent = '✏️ Modo manual: Puedes ingresar libremente placa, ruta e IMEI para pruebas ad-hoc.';
+      }
+      updateTestPreview();
+      return;
+    }
+
+    const u = fleetData.find(item => item.placa === placa);
+    if (u) {
+      if (testPlaca) {
+        testPlaca.value = u.placa;
+        testPlaca.readOnly = true;
+        testPlaca.classList.add('input-locked');
+      }
+      if (testRuta) {
+        testRuta.value = u.ruta || (allRoutes[0]?.route_short_name || 'OM09');
+        testRuta.readOnly = true;
+        testRuta.classList.add('input-locked');
+      }
+      if (testImei) {
+        testImei.value = u.imei || '';
+        testImei.readOnly = true;
+        testImei.classList.add('input-locked');
+      }
+      if (testModelo) {
+        if (u.modeloGps) testModelo.value = u.modeloGps;
+        testModelo.disabled = true;
+        testModelo.classList.add('input-locked');
+      }
+      if (lockNotice) {
+        lockNotice.style.display = 'block';
+        lockNotice.style.color = '#38bdf8';
+        lockNotice.style.background = 'rgba(56, 189, 248, 0.1)';
+        lockNotice.style.borderLeftColor = '#38bdf8';
+        lockNotice.textContent = `🔒 Placa [${u.placa}], Ruta [${u.ruta || 'OM09'}] e IMEI protegidos contra edición (Asignados en inventario).`;
+      }
+      updateTestPreview();
+    }
+  }
+
   function populateTestUnits() {
     if (!testUnitSelect) return;
     const currentVal = testUnitSelect.value;
@@ -1051,38 +1169,40 @@
     });
 
     testUnitSelect.innerHTML = opts;
-    if (currentVal) testUnitSelect.value = currentVal;
+    if (currentVal && fleetData.some(u => u.placa === currentVal)) {
+      testUnitSelect.value = currentVal;
+    } else if (fleetData.length > 0) {
+      testUnitSelect.value = fleetData[0].placa;
+    }
+    applySelectedTestUnit();
   }
 
   if (testUnitSelect) {
-    testUnitSelect.addEventListener('change', () => {
-      const placa = testUnitSelect.value;
-      if (!placa) return;
-      const u = fleetData.find(item => item.placa === placa);
-      if (u) {
-        testPlaca.value = u.placa;
-        testRuta.value = u.ruta || 'IO33B';
-        testImei.value = u.imei || '864201041234561';
-        if (u.modeloGps) testModelo.value = u.modeloGps;
-        updateTestPreview();
-      }
-    });
+    testUnitSelect.addEventListener('change', applySelectedTestUnit);
   }
 
   function getTestPayload() {
+    const selectedPlaca = testUnitSelect ? testUnitSelect.value : '';
+    const selectedUnit = selectedPlaca ? fleetData.find(u => u.placa === selectedPlaca) : null;
+
+    const finalPlaca = selectedUnit ? selectedUnit.placa : (testPlaca ? testPlaca.value.trim().toUpperCase() : 'A1B789');
+    const finalRuta = selectedUnit ? (selectedUnit.ruta || 'OM09') : (testRuta ? testRuta.value.trim().toUpperCase() : 'OM09');
+    const finalImei = selectedUnit ? (selectedUnit.imei || '864201041234561') : (testImei ? testImei.value.trim() : '864201041234561');
+    const finalModelo = selectedUnit ? (selectedUnit.modeloGps || 'TELTONIKA_FMB920') : (testModelo?.value || 'TELTONIKA_FMB920');
+
     return {
-      imei: testImei ? testImei.value.trim() : '864201041234561',
-      placa: testPlaca ? testPlaca.value.trim().toUpperCase() : 'A1B789',
-      ruta: testRuta ? testRuta.value.trim().toUpperCase() : 'IO33B',
-      latitud: parseFloat(testLat?.value || '-12.083812'),
-      longitud: parseFloat(testLon?.value || '-76.971038'),
+      imei: finalImei,
+      placa: finalPlaca,
+      ruta: finalRuta,
+      latitud: parseFloat(testLat?.value || '-12.060972'),
+      longitud: parseFloat(testLon?.value || '-77.142954'),
       altitud: 154.2,
-      velocidad: parseFloat(testSpeed?.value || '38.5'),
-      rumbo: parseFloat(testRumbo?.value || '180.0'),
+      velocidad: parseFloat(testSpeed?.value || '35.0'),
+      rumbo: parseFloat(testRumbo?.value || '90.0'),
       timestamp: Math.floor(Date.now() / 1000),
       evento: testEvento?.value || 'POSICION_PERIODICA',
       ignicion: parseInt(testAcc?.value || '1', 10),
-      modeloGps: testModelo?.value || 'TELTONIKA_FMB920'
+      modeloGps: finalModelo
     };
   }
 
@@ -1153,6 +1273,105 @@
     });
   }
 
+  // --- GESTIÓN DE COLA OFFLINE ATU (MODAL Y BANCO DE PRUEBAS) ---
+  const elPillQueue = document.getElementById('pill-queue');
+  const elModalQueue = document.getElementById('modal-queue');
+  const elModalQueueCloseBtn = document.getElementById('modal-queue-close-btn');
+  const elBtnModalQueueClose = document.getElementById('btn-modal-queue-close');
+  const elBtnModalClearQueue = document.getElementById('btn-modal-clear-queue');
+  const elBtnModalFlushQueue = document.getElementById('btn-modal-flush-queue');
+  const elModalQueueCount = document.getElementById('modal-queue-count');
+  const elModalQueueJson = document.getElementById('modal-queue-json');
+
+  const elTestingQueueCount = document.getElementById('testing-queue-count');
+  const elBtnTestingFlushQueue = document.getElementById('btn-testing-flush-queue');
+  const elBtnTestingClearQueue = document.getElementById('btn-testing-clear-queue');
+  const elTestingQueuePreview = document.getElementById('testing-queue-preview');
+
+  async function loadQueuePreview() {
+    try {
+      const res = await fetch('/api/queue?limit=15');
+      if (!res.ok) return;
+      const data = await res.json();
+      const count = data.queueSize || 0;
+
+      if (elCountQueue) elCountQueue.textContent = count;
+      if (elModalQueueCount) elModalQueueCount.textContent = count;
+      if (elTestingQueueCount) elTestingQueueCount.textContent = count;
+
+      const formatted = count === 0
+        ? '// La cola está vacía. No hay tramas pendientes de envío.'
+        : JSON.stringify(data.items, null, 2);
+
+      if (elModalQueueJson) elModalQueueJson.textContent = formatted;
+      if (elTestingQueuePreview) elTestingQueuePreview.textContent = formatted;
+    } catch (e) {
+      console.warn('Error consultando cola offline:', e);
+    }
+  }
+
+  async function clearOfflineQueue() {
+    if (!confirm('¿Desea vaciar la cola de telemetría offline? Se descartarán las tramas retenidas.')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/queue/clear', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'OK') {
+        if (elCountQueue) elCountQueue.textContent = 0;
+        if (elModalQueueCount) elModalQueueCount.textContent = 0;
+        if (elTestingQueueCount) elTestingQueueCount.textContent = 0;
+        const msg = `// Cola vaciada (${data.clearedCount || 0} tramas eliminadas).`;
+        if (elModalQueueJson) elModalQueueJson.textContent = msg;
+        if (elTestingQueuePreview) elTestingQueuePreview.textContent = msg;
+        appendLog(`🗑️ Cola offline vaciada: ${data.clearedCount || 0} tramas eliminadas.`);
+      }
+    } catch (e) {
+      alert('Error vaciando la cola: ' + e.message);
+    }
+  }
+
+  async function flushOfflineQueue() {
+    try {
+      const res = await fetch('/api/queue/flush', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'OK') {
+        appendLog('🚀 Reintento de transmisión iniciado.');
+        setTimeout(loadQueuePreview, 800);
+      }
+    } catch (e) {
+      alert('Error forzando reintento: ' + e.message);
+    }
+  }
+
+  function openQueueModal() {
+    if (elModalQueue) {
+      elModalQueue.classList.add('active');
+      loadQueuePreview();
+    }
+  }
+
+  function closeQueueModal() {
+    if (elModalQueue) {
+      elModalQueue.classList.remove('active');
+    }
+  }
+
+  if (elPillQueue) elPillQueue.addEventListener('click', openQueueModal);
+  if (elModalQueueCloseBtn) elModalQueueCloseBtn.addEventListener('click', closeQueueModal);
+  if (elBtnModalQueueClose) elBtnModalQueueClose.addEventListener('click', closeQueueModal);
+  if (elBtnModalClearQueue) elBtnModalClearQueue.addEventListener('click', clearOfflineQueue);
+  if (elBtnModalFlushQueue) elBtnModalFlushQueue.addEventListener('click', flushOfflineQueue);
+
+  if (elModalQueue) {
+    elModalQueue.addEventListener('click', (e) => {
+      if (e.target === elModalQueue) closeQueueModal();
+    });
+  }
+
+  if (elBtnTestingClearQueue) elBtnTestingClearQueue.addEventListener('click', clearOfflineQueue);
+  if (elBtnTestingFlushQueue) elBtnTestingFlushQueue.addEventListener('click', flushOfflineQueue);
+
   // =========================================================================
   // --- MÓDULO DISEÑADOR GTFS EN MAPA LEAFLET & EXPORTADOR SQLITE ---
   // =========================================================================
@@ -1190,10 +1409,6 @@
   let shapeMarkersGroup = null;
   let stopsLayerGroup = null;
   let tempStopMarker = null;
-  let allStops = [];
-  let allRoutes = [];
-  let allShapes = [];
-  let allTrips = [];
 
   // Trazo activo para colocación de paraderos y filtro de ordenamiento
   let stopActiveShapeId = '';
@@ -1384,7 +1599,15 @@
         if (targetContent) {
           targetContent.classList.add('active');
           if (targetId === 'tab-gtfs-map') {
-            setTimeout(() => { if (gtfsMap) gtfsMap.invalidateSize(); }, 150);
+            setTimeout(() => {
+              if (gtfsMap) {
+                gtfsMap.invalidateSize();
+                if (shapePolyline && currentShapePoints.length > 0) {
+                  const bounds = shapePolyline.getBounds();
+                  if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+                }
+              }
+            }, 150);
           } else if (targetId === 'tab-gtfs-routes') {
             loadRoutesAndTrips();
           } else if (targetId === 'tab-gtfs-freqs') {
@@ -1419,6 +1642,10 @@
         }
         if (shapePolyline && currentShapePoints.length > 0) {
           shapePolyline.setLatLngs(currentShapePoints.map(p => [p.lat, p.lon]));
+          if (gtfsMap) {
+            const bounds = shapePolyline.getBounds();
+            if (bounds.isValid()) gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+          }
         }
       });
 
@@ -1433,6 +1660,10 @@
           exitStopEditorMode();
         }
         const stopShapeSel = document.getElementById('gtfs-stop-shape-select');
+        const shapeSelect = document.getElementById('gtfs-shape-select');
+        if (stopShapeSel && !stopShapeSel.value && shapeSelect && shapeSelect.value) {
+          stopShapeSel.value = shapeSelect.value;
+        }
         if (stopShapeSel && stopShapeSel.value) {
           if (typeof setStopActiveShape === 'function') {
             setStopActiveShape(stopShapeSel.value);
@@ -1769,7 +2000,7 @@
           alert('No hay ningún trazo seleccionado para eliminar.');
           return;
         }
-        if (!confirm(`¿Está seguro de eliminar el trazo "${shapeId}" de SQLite?\nSe borrarán todos sus puntos geométricos.`)) {
+        if (!confirm(`¿Está seguro de eliminar el trazo "${shapeId}"?\nSe borrarán todos sus puntos geométricos.`)) {
           return;
         }
         try {
@@ -2114,7 +2345,7 @@
         }
 
         if (!editingOldShapeId && allShapes.some(s => s.shape_id === shapeId)) {
-          if (!confirm(`Ya existe un trazo con el identificador "${shapeId}" en SQLite.\n\n¿Desea sobreescribir sus puntos geométricos?`)) {
+          if (!confirm(`Ya existe un trazo con el identificador "${shapeId}" en el sistema.\n\n¿Desea sobreescribir sus puntos geométricos?`)) {
             return;
           }
         }
@@ -2138,7 +2369,7 @@
             if (payload.old_shape_id) {
               alert(`✅ Trazo guardado exitosamente.\nSe renombró de "${payload.old_shape_id}" a "${shapeId}" y se actualizaron los viajes vinculados.`);
             } else {
-              alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos en SQLite.`);
+              alert(`✅ Trazo "${shapeId}" guardado exitosamente con ${data.totalPoints} puntos.`);
             }
             await loadShapeList(shapeId);
             await exitShapeEditorMode();
@@ -2155,8 +2386,9 @@
     const shapeSelect = document.getElementById('gtfs-shape-select');
     if (shapeSelect) {
       shapeSelect.addEventListener('change', async () => {
-        await exitShapeEditorMode();
-        if (shapeSelect.value) {
+        if (isDrawingShape) {
+          await exitShapeEditorMode();
+        } else if (shapeSelect.value) {
           await loadSelectedShape(shapeSelect.value);
         }
       });
@@ -2228,7 +2460,7 @@
             stop_lon: stopLon,
             location_type: stopType
           };
-          if (oldStopId && String(oldStopId) !== String(stopId)) {
+          if (oldStopId) {
             payload.old_stop_id = oldStopId;
           }
 
@@ -2239,7 +2471,7 @@
           });
           const data = await res.json();
           if (data.success) {
-            alert('✅ Paradero guardado exitosamente en SQLite.');
+            alert('✅ Paradero guardado exitosamente.');
             if (typeof exitStopEditorMode === 'function') {
               exitStopEditorMode();
             }
@@ -2542,6 +2774,57 @@
     }
   }
 
+  async function loadSelectedShape(shapeId) {
+    try {
+      if (!shapeId) {
+        currentShapePoints = [];
+        renderShapePolylineAndStats();
+        if (typeof updateViewerActionButtons === 'function') {
+          updateViewerActionButtons(null);
+        }
+        return;
+      }
+
+      const isReturn = shapeId.includes('VUELTA') || shapeId.includes('_VTA');
+      currentShapeDir = isReturn ? 1 : 0;
+      const btnShapeDir0 = document.getElementById('btn-shape-dir-0');
+      const btnShapeDir1 = document.getElementById('btn-shape-dir-1');
+      if (btnShapeDir0) btnShapeDir0.classList.toggle('active', currentShapeDir === 0);
+      if (btnShapeDir1) btnShapeDir1.classList.toggle('active', currentShapeDir === 1);
+
+      if (shapePolyline) {
+        shapePolyline.setStyle({ color: currentShapeDir === 0 ? '#0284c7' : '#8b5cf6' });
+      }
+
+      const res = await fetch(`/api/gtfs/shapes?shape_id=${encodeURIComponent(shapeId)}`);
+      const points = await res.json();
+      currentShapePoints = (Array.isArray(points) ? points : []).map(p => ({
+        lat: p.shape_pt_lat,
+        lon: p.shape_pt_lon
+      }));
+
+      renderShapePolylineAndStats();
+
+      if (currentShapePoints.length > 0 && gtfsMap && shapePolyline) {
+        gtfsMap.invalidateSize();
+        const bounds = shapePolyline.getBounds();
+        if (bounds.isValid()) {
+          gtfsMap.fitBounds(bounds, { padding: [30, 30] });
+        }
+      }
+
+      if (isDrawingShape && typeof updateReferenceShape === 'function') {
+        updateReferenceShape();
+      }
+
+      if (typeof updateViewerActionButtons === 'function') {
+        updateViewerActionButtons(shapeId);
+      }
+    } catch (e) {
+      console.error('[GTFS] Error cargando trazo:', e);
+    }
+  }
+
   function getNextStopId() {
     if (!allStops || allStops.length === 0) return 1;
     const nums = allStops
@@ -2673,7 +2956,7 @@
   };
 
   window.editGtfsStop = function(stopId) {
-    const stop = (allStops || []).find(s => s.stop_id === stopId);
+    const stop = (allStops || []).find(s => String(s.stop_id) === String(stopId));
     if (!stop) return;
     if (gtfsCurrentMode !== 'stops') {
       const btnModeStops = document.getElementById('btn-mode-stops');
@@ -2685,7 +2968,7 @@
   };
 
   window.deleteGtfsStop = async function(stopId) {
-    if (!confirm(`¿Desea eliminar el paradero "${stopId}" de SQLite?`)) return;
+    if (!confirm(`¿Desea eliminar el paradero "${stopId}"?`)) return;
     try {
       const res = await fetch('/api/gtfs/stops/delete', {
         method: 'POST',
@@ -2772,7 +3055,7 @@
 
     if (btnReset) {
       btnReset.addEventListener('click', async () => {
-        if (!confirm('¿Desea borrar o restablecer los datos de la empresa operadora de SQLite?')) return;
+        if (!confirm('¿Desea borrar o restablecer los datos de la empresa operadora?')) return;
         try {
           const res = await fetch('/api/gtfs/agency/delete', { method: 'POST' });
           const data = await res.json();
@@ -2807,7 +3090,7 @@
           });
           const data = await res.json();
           if (data.success) {
-            alert('✅ Datos de empresa guardados en SQLite.');
+            alert('✅ Datos de empresa guardados exitosamente.');
             await renderAgency();
           } else {
             alert(`❌ Error: ${data.error}`);
@@ -2976,6 +3259,7 @@
           if (data.success) {
             form.style.display = 'none';
             await loadRoutes();
+            loadFleet();
           } else {
             alert(`❌ Error al guardar ruta: ${data.error}`);
           }
@@ -2995,8 +3279,12 @@
         body: JSON.stringify({ route_id: routeId })
       });
       const data = await res.json();
-      if (data.success) await loadRoutes();
-      else alert(`❌ Error: ${data.error}`);
+      if (data.success) {
+        await loadRoutes();
+        loadFleet();
+      } else {
+        alert(`❌ Error: ${data.error}`);
+      }
     } catch (e) {
       alert(`❌ Error de conexión: ${e.message}`);
     }
@@ -3035,7 +3323,7 @@
         body: JSON.stringify(tripVuelta)
       });
       await loadTrips();
-      alert(`✅ Se crearon 2 patrones de viajes en SQLite para ${shortName}:\n• ${tripIda.trip_id} (Sentido 0 - Ida, Trazo: ${tripIda.shape_id})\n• ${tripVuelta.trip_id} (Sentido 1 - Vuelta, Trazo: ${tripVuelta.shape_id})`);
+      alert(`✅ Se crearon 2 patrones de viajes para ${shortName}:\n• ${tripIda.trip_id} (Sentido 0 - Ida, Trazo: ${tripIda.shape_id})\n• ${tripVuelta.trip_id} (Sentido 1 - Vuelta, Trazo: ${tripVuelta.shape_id})`);
     } catch (err) {
       alert(`Error al generar viajes: ${err.message}`);
     }
@@ -3052,6 +3340,8 @@
 
       const formTrip = document.getElementById('form-gtfs-trip');
       if (formTrip) formTrip.style.display = 'none';
+      const oldIdEl = document.getElementById('trip-old-id');
+      if (oldIdEl) oldIdEl.value = '';
       editingTripId = null;
 
       // Actualizar select de Trips en Frecuencias
@@ -3107,6 +3397,7 @@
     editingTripId = tripId;
     const form = document.getElementById('form-gtfs-trip');
     const title = document.getElementById('trip-form-title');
+    const oldIdInput = document.getElementById('trip-old-id');
     const tripInput = document.getElementById('trip-id');
     const routeSel = document.getElementById('trip-route-select');
     const dirSel = document.getElementById('trip-direction');
@@ -3114,9 +3405,10 @@
     const headsignInput = document.getElementById('trip-headsign');
 
     if (title) title.textContent = `✏️ Modificar Viaje [${tripId}]`;
+    if (oldIdInput) oldIdInput.value = t.trip_id;
     if (tripInput) {
       tripInput.value = t.trip_id;
-      tripInput.readOnly = true;
+      tripInput.readOnly = false;
     }
     if (routeSel) routeSel.value = t.route_id;
     if (dirSel) dirSel.value = t.direction_id;
@@ -3126,6 +3418,7 @@
     if (form) {
       form.style.display = 'block';
       form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (tripInput) tripInput.focus();
     }
   };
 
@@ -3137,10 +3430,12 @@
     if (btnShowAdd) {
       btnShowAdd.addEventListener('click', () => {
         editingTripId = null;
+        const oldIdInput = document.getElementById('trip-old-id');
         const title = document.getElementById('trip-form-title');
         const tripInput = document.getElementById('trip-id');
         const headsignInput = document.getElementById('trip-headsign');
         if (title) title.textContent = '➕ Registrar Plantilla de Viaje';
+        if (oldIdInput) oldIdInput.value = '';
         if (tripInput) {
           tripInput.value = '';
           tripInput.readOnly = false;
@@ -3156,6 +3451,8 @@
     if (btnCancel) {
       btnCancel.addEventListener('click', () => {
         if (form) form.style.display = 'none';
+        const oldIdInput = document.getElementById('trip-old-id');
+        if (oldIdInput) oldIdInput.value = '';
         editingTripId = null;
       });
     }
@@ -3164,6 +3461,7 @@
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const tripId = document.getElementById('trip-id')?.value.trim().toUpperCase();
+        const oldTripId = document.getElementById('trip-old-id')?.value.trim().toUpperCase() || editingTripId;
         const routeId = document.getElementById('trip-route-select')?.value;
         const dirId = parseInt(document.getElementById('trip-direction')?.value || '0', 10);
         const shapeId = document.getElementById('trip-shape-select')?.value;
@@ -3172,20 +3470,28 @@
         if (!tripId || !routeId) return;
 
         try {
+          const payload = {
+            trip_id: tripId,
+            route_id: routeId,
+            direction_id: dirId,
+            shape_id: shapeId,
+            trip_headsign: headsign
+          };
+          if (oldTripId) {
+            payload.old_trip_id = oldTripId;
+          }
+
           const res = await fetch('/api/gtfs/trips', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              trip_id: tripId,
-              route_id: routeId,
-              direction_id: dirId,
-              shape_id: shapeId,
-              trip_headsign: headsign
-            })
+            body: JSON.stringify(payload)
           });
           const data = await res.json();
           if (data.success) {
             form.style.display = 'none';
+            const oldIdInput = document.getElementById('trip-old-id');
+            if (oldIdInput) oldIdInput.value = '';
+            editingTripId = null;
             await loadTrips();
           } else {
             alert(`❌ Error al guardar viaje: ${data.error}`);
@@ -3375,29 +3681,106 @@
 
   // --- EXPORTADORES & PREVISUALIZADOR CSV ---
   function setupExportHandlers() {
-    document.querySelectorAll('.gtfs-export-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const filename = btn.getAttribute('data-export-file');
-        if (!filename) return;
+    const previewBox = document.getElementById('gtfs-preview-csv');
+    const previewFilename = document.getElementById('gtfs-preview-filename');
+    const previewStats = document.getElementById('gtfs-preview-stats');
+    const btnDownloadPreview = document.getElementById('btn-download-preview');
+    const btnCopyPreview = document.getElementById('btn-copy-preview');
 
-        const previewBox = document.getElementById('gtfs-preview-csv');
+    let currentPreviewFile = null;
+    let currentPreviewText = '';
+
+    async function loadPreview(filename, cardEl) {
+      if (!filename) return;
+
+      // Marcar tarjeta visualmente activa
+      document.querySelectorAll('.gtfs-export-card').forEach(c => c.classList.remove('active'));
+      if (cardEl) cardEl.classList.add('active');
+
+      currentPreviewFile = filename;
+      if (previewFilename) previewFilename.textContent = filename;
+      if (previewStats) previewStats.textContent = '⏳ Cargando...';
+      if (previewBox) previewBox.textContent = `⏳ Generando archivo ${filename} en tiempo real...`;
+
+      try {
+        const res = await fetch(`/api/gtfs/export/${filename}`);
+        const text = await res.text();
+        currentPreviewText = text;
         if (previewBox) {
-          previewBox.textContent = `⏳ Generando previsualización de ${filename} desde SQLite...`;
+          previewBox.textContent = text;
         }
 
-        try {
-          const res = await fetch(`/api/gtfs/export/${filename}`);
-          const text = await res.text();
-          if (previewBox) {
-            previewBox.textContent = text;
-          }
-        } catch (err) {
-          if (previewBox) {
-            previewBox.textContent = `Error previsualizando ${filename}: ${err.message}`;
-          }
+        const lines = text.trim().split('\n').filter(Boolean).length;
+        if (previewStats) {
+          previewStats.textContent = `(${lines} ${lines === 1 ? 'línea' : 'líneas'})`;
         }
+
+        // Habilitar y mostrar botón de descarga en el panel de previsualización
+        if (btnDownloadPreview) {
+          btnDownloadPreview.href = `/api/gtfs/export/${filename}`;
+          btnDownloadPreview.download = filename;
+          btnDownloadPreview.style.display = 'inline-flex';
+          btnDownloadPreview.textContent = `⬇️ Descargar ${filename}`;
+        }
+
+        // Habilitar botón de copiado
+        if (btnCopyPreview) {
+          btnCopyPreview.disabled = false;
+        }
+      } catch (err) {
+        if (previewBox) {
+          previewBox.textContent = `Error previsualizando ${filename}: ${err.message}`;
+        }
+        if (previewStats) previewStats.textContent = '(Error)';
+      }
+    }
+
+    // Manejar clics en las tarjetas de exportación (Zona de Previsualización)
+    document.querySelectorAll('.gtfs-export-card').forEach(card => {
+      const filename = card.getAttribute('data-export-file');
+      const infoEl = card.querySelector('.gtfs-export-card-info');
+
+      // Click en la zona informativa o en la tarjeta
+      card.addEventListener('click', (e) => {
+        // Si el clic fue en el botón de descarga, no activar previsualización
+        if (e.target.closest('.btn-export-dl')) return;
+        loadPreview(filename, card);
+      });
+
+      // Accesibilidad con teclado (Enter o Espacio)
+      if (infoEl) {
+        infoEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            loadPreview(filename, card);
+          }
+        });
+      }
+    });
+
+    // Detener propagación en el botón de descarga para que solo descargue
+    document.querySelectorAll('.btn-export-dl').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
       });
     });
+
+    // Botón de copiar contenido del archivo previsualizado
+    if (btnCopyPreview) {
+      btnCopyPreview.addEventListener('click', async () => {
+        if (!currentPreviewText) return;
+        try {
+          await navigator.clipboard.writeText(currentPreviewText);
+          const originalText = btnCopyPreview.textContent;
+          btnCopyPreview.textContent = '✅ Copiado';
+          setTimeout(() => {
+            btnCopyPreview.textContent = originalText;
+          }, 2000);
+        } catch (err) {
+          alert('No se pudo copiar el texto al portapapeles: ' + err.message);
+        }
+      });
+    }
   }
 
   // Cargar inventario inicial de flota

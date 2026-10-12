@@ -50,9 +50,9 @@
         <span class="metric-label">ACK ATU</span>
       </div>
 
-      <div class="metric-pill">
+      <div class="metric-pill metric-pill-clickable" id="pill-queue" title="📦 Cola offline ATU (clic para ver o vaciar)">
         <span class="metric-num text-warning" id="count-queue">0</span>
-        <span class="metric-label">En Cola</span>
+        <span class="metric-label">En Cola ⚙️</span>
       </div>
 
       <div class="metric-pill">
@@ -185,7 +185,7 @@
         <div class="kpis-header-bar">
           <div>
             <h2 class="kpis-title">📊 Métricas Operacionales y Cumplimiento ATU</h2>
-            <p class="kpis-subtitle">Cálculo en tiempo real con telemetría cada 30s • Persistencia en SQLite local</p>
+            <p class="kpis-subtitle">Cálculo en tiempo real con telemetría cada 30s • Base de datos local</p>
           </div>
           <div class="kpis-header-actions">
             <span id="kpi-peak-badge" class="badge-peak peak-off">⚪ HORA VALLE</span>
@@ -419,25 +419,29 @@
               </select>
             </div>
 
+            <div id="test-unit-lock-notice" style="font-size: 0.76rem; color: #38bdf8; margin-bottom: 0.75rem; background: rgba(56, 189, 248, 0.1); border-left: 3px solid #38bdf8; padding: 0.4rem 0.65rem; border-radius: 4px;">
+              🔒 Placa, Ruta e IMEI protegidos contra edición (Asignados en inventario)
+            </div>
+
             <div class="form-group-grid">
               <div class="form-field">
                 <label>Placa (6 Caracteres)</label>
-                <input type="text" id="test-placa" value="A1B789" maxlength="6" style="text-transform: uppercase;">
+                <input type="text" id="test-placa" value="A1B789" maxlength="6" readonly class="input-locked" style="text-transform: uppercase;">
               </div>
               <div class="form-field">
                 <label>Código de Ruta ATU</label>
-                <input type="text" id="test-ruta" value="IO33B">
+                <input type="text" id="test-ruta" value="OM09" readonly class="input-locked" style="text-transform: uppercase;">
               </div>
             </div>
 
             <div class="form-group-grid">
               <div class="form-field">
                 <label>IMEI del GPS (15 Dígitos)</label>
-                <input type="text" id="test-imei" value="864201041234561" maxlength="15">
+                <input type="text" id="test-imei" value="864201041234561" maxlength="15" readonly class="input-locked">
               </div>
               <div class="form-field">
                 <label>Modelo GPS Homologado</label>
-                <select id="test-modelo">
+                <select id="test-modelo" disabled class="input-locked">
                   <option value="TELTONIKA_FMB920">TELTONIKA_FMB920</option>
                   <option value="TELTONIKA_FMC130">TELTONIKA_FMC130</option>
                   <option value="SUNTECH_ST310">SUNTECH_ST310</option>
@@ -451,22 +455,22 @@
 
             <div class="form-group-grid">
               <div class="form-field">
-                <label>Latitud (WGS 84)</label>
-                <input type="number" step="0.000001" id="test-lat" value="-12.083812">
+                <label>Latitud (WGS 84) ✏️</label>
+                <input type="number" step="0.000001" id="test-lat" value="-12.060972">
               </div>
               <div class="form-field">
-                <label>Longitud (WGS 84)</label>
-                <input type="number" step="0.000001" id="test-lon" value="-76.971038">
+                <label>Longitud (WGS 84) ✏️</label>
+                <input type="number" step="0.000001" id="test-lon" value="-77.142954">
               </div>
             </div>
 
             <div class="form-field">
-              <label>Puntos Rápidos de Lima</label>
+              <label>Puntos Rápidos de la Ruta OM09 (Sáenz Peña ⇄ Plaza Unión)</label>
               <div class="quick-locations">
-                <button type="button" class="quick-loc-btn" data-lat="-12.083812" data-lon="-76.971038">Javier Prado (Óvalo Monitor)</button>
-                <button type="button" class="quick-loc-btn" data-lat="-12.091215" data-lon="-77.026478">Vía Expresa (Javier Prado)</button>
+                <button type="button" class="quick-loc-btn" data-lat="-12.060972" data-lon="-77.142954">Callao (Sáenz Peña)</button>
+                <button type="button" class="quick-loc-btn" data-lat="-12.056000" data-lon="-77.095000">Colonial (Carmen de la Legua)</button>
                 <button type="button" class="quick-loc-btn" data-lat="-12.046374" data-lon="-77.042793">Plaza Dos de Mayo</button>
-                <button type="button" class="quick-loc-btn" data-lat="-12.021500" data-lon="-77.114300">Aeropuerto Jorge Chávez</button>
+                <button type="button" class="quick-loc-btn" data-lat="-12.043701" data-lon="-77.043815">Plaza Unión (Centro de Lima)</button>
               </div>
             </div>
 
@@ -524,6 +528,27 @@
               Haga clic en <strong>"Transmitir Trama de Prueba a ATU"</strong> para enviar la posición y verificar la validación y confirmación ACK.
             </div>
           </div>
+
+          <!-- Panel de Control de Cola Offline ATU -->
+          <div class="testing-card" style="grid-column: 1 / -1; margin-top: 0.5rem;">
+            <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>📦 Cola de Reintento Offline ATU (<span id="testing-queue-count" style="color: #f59e0b; font-weight: 700;">0</span> tramas acumuladas)</span>
+              <div style="display: flex; gap: 0.5rem;">
+                <button type="button" class="btn btn-secondary" id="btn-testing-flush-queue" style="font-size: 0.75rem; padding: 0.35rem 0.65rem;">
+                  🚀 Reintentar Transmisión
+                </button>
+                <button type="button" class="btn btn-secondary" id="btn-testing-clear-queue" style="font-size: 0.75rem; padding: 0.35rem 0.65rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);">
+                  🗑️ Vaciar Cola
+                </button>
+              </div>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0 0 0.5rem 0;">
+              Por normativa ATU, si el enlace WebSocket cae o no está disponible, las posiciones se encolan automáticamente en disco (<code style="color: #38bdf8;">data/offline_queue.json</code>) hasta que se restablezca la conexión. Si estás en entorno de pruebas sin receptor ATU, puedes vaciarla con un solo clic.
+            </p>
+            <div class="trama-code-wrapper" style="max-height: 160px; overflow-y: auto;">
+              <pre class="trama-code" id="testing-queue-preview">// No hay tramas encoladas pendientes</pre>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -535,7 +560,7 @@
         <div class="gtfs-header-bar">
           <div>
             <h2 class="kpis-title">🗺️ Diseñador de Rutas y Paraderos GTFS</h2>
-            <p class="kpis-subtitle">Cree geometrías en el mapa, paraderos oficiales y frecuencias de despacho para SQLite</p>
+            <p class="kpis-subtitle">Cree geometrías en el mapa, paraderos oficiales y frecuencias de despacho del servicio</p>
           </div>
           <div class="gtfs-subtabs">
             <button class="gtfs-subtab-btn active" data-gtfs-tab="tab-gtfs-map">🗺️ Trazador en Mapa</button>
@@ -569,8 +594,7 @@
                   </div>
                   <div id="shape-selector-container">
                     <select id="gtfs-shape-select" style="width: 100%;">
-                      <option value="IO33B_IDA">IO33B_IDA (Ida)</option>
-                      <option value="IO33B_VUELTA">IO33B_VUELTA (Vuelta)</option>
+                      <option value="">Cargando trazos del sistema...</option>
                     </select>
                   </div>
                   <div id="shape-name-edit-container" style="display: none;">
@@ -593,7 +617,7 @@
                       ✏️ Modificar
                     </button>
                   </div>
-                  <button type="button" class="btn btn-secondary" id="btn-action-delete-shape" style="justify-content: center; font-size: 0.78rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);" title="Eliminar trazo actual de SQLite">
+                  <button type="button" class="btn btn-secondary" id="btn-action-delete-shape" style="justify-content: center; font-size: 0.78rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);" title="Eliminar trazo actual">
                     🗑️ Borrar Trazo Actual
                   </button>
                 </div>
@@ -656,7 +680,7 @@
                   </div>
 
                   <button type="button" class="btn btn-success" id="btn-save-shape-sql" style="justify-content: center; background: #059669; color: #fff;">
-                    💾 Guardar Trazo en SQLite
+                    💾 Guardar Trazo
                   </button>
 
                   <button type="button" class="btn btn-secondary" id="btn-cancel-edit-shape" style="justify-content: center;">
@@ -890,7 +914,7 @@
               </form>
 
               <div style="margin-top: 0.25rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted);">
-                RUTAS ACTIVAS EN SQLITE:
+                RUTAS REGISTRADAS EN EL SISTEMA:
               </div>
               <div id="gtfs-routes-list" class="gtfs-items-container"></div>
             </div>
@@ -911,6 +935,7 @@
 
               <!-- Formulario de Viaje (colapsable) -->
               <form id="form-gtfs-trip" style="display: none; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.85rem; margin-bottom: 0.85rem;">
+                <input type="hidden" id="trip-old-id" value="">
                 <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 0.6rem;" id="trip-form-title">
                   ➕ Registrar Plantilla de Viaje
                 </div>
@@ -1017,45 +1042,144 @@
 
         <!-- SUBPESTAÑA 4: EXPORTAR ARCHIVOS GTFS -->
         <div class="gtfs-subtab-content" id="tab-gtfs-export">
-          <div class="testing-card" style="max-width: 900px; margin: 0 auto; width: 100%;">
-            <div class="card-heading">📦 Exportar Especificación GTFS desde SQLite</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">
-              Descargue los archivos oficiales generados en tiempo real desde la base de datos:
-            </div>
-
-            <div class="gtfs-export-buttons-grid">
-              <a href="/api/gtfs/export/shapes.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="shapes.txt">
-                <span>📍 shapes.txt (Trazo)</span>
-                <span class="export-dl-icon">⬇️</span>
-              </a>
-              <a href="/api/gtfs/export/stops.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="stops.txt">
-                <span>🚏 stops.txt (Paraderos)</span>
-                <span class="export-dl-icon">⬇️</span>
-              </a>
-              <a href="/api/gtfs/export/routes.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="routes.txt">
-                <span>🚍 routes.txt (Rutas)</span>
-                <span class="export-dl-icon">⬇️</span>
-              </a>
-              <a href="/api/gtfs/export/trips.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="trips.txt">
-                <span>🔄 trips.txt (Viajes)</span>
-                <span class="export-dl-icon">⬇️</span>
-              </a>
-              <a href="/api/gtfs/export/frequencies.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="frequencies.txt">
-                <span>⏱️ frequencies.txt (Intervalos)</span>
-                <span class="export-dl-icon">⬇️</span>
-              </a>
-              <a href="/api/gtfs/export/agency.txt" download class="btn btn-secondary gtfs-export-btn" data-export-file="agency.txt">
-                <span>🏢 agency.txt (Empresa)</span>
-                <span class="export-dl-icon">⬇️</span>
-              </a>
-            </div>
-
-            <div style="margin-top: 1.5rem;">
-              <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.4rem;">
-                Previsualización en tiempo real del archivo GTFS generado:
+          <div class="testing-card" style="max-width: 960px; margin: 0 auto; width: 100%;">
+            <div class="card-heading" style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span>📦 Exportación de Especificación GTFS Oficial</span>
+                <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                  Archivos estándar para validadores de transporte público y plataformas de movilidad
+                </div>
               </div>
-              <div class="trama-code-wrapper" style="max-height: 240px; overflow-y: auto;">
-                <pre class="trama-code" id="gtfs-preview-csv">Haga clic en cualquiera de los botones de arriba para previsualizar...</pre>
+            </div>
+
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              Haga clic en una tarjeta para <strong>previsualizar su contenido</strong> sin descargarlo, o use el botón <strong>Descargar</strong> para guardar el archivo directamente:
+            </div>
+
+            <div class="gtfs-export-grid">
+              <!-- Item shapes.txt -->
+              <div class="gtfs-export-card" data-export-file="shapes.txt">
+                <div class="gtfs-export-card-info" role="button" tabindex="0" title="Haga clic para previsualizar shapes.txt">
+                  <div class="gtfs-export-title">
+                    <span class="gtfs-export-icon">📍</span>
+                    <span class="gtfs-export-name">shapes.txt</span>
+                  </div>
+                  <div class="gtfs-export-desc">Trazo y coordenadas geométricas</div>
+                  <div class="gtfs-export-preview-tag">👁️ Previsualizar</div>
+                </div>
+                <div class="gtfs-export-card-action">
+                  <a href="/api/gtfs/export/shapes.txt" download="shapes.txt" class="btn btn-secondary btn-export-dl" title="Descargar shapes.txt">
+                    <span>⬇️ Descargar</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Item stops.txt -->
+              <div class="gtfs-export-card" data-export-file="stops.txt">
+                <div class="gtfs-export-card-info" role="button" tabindex="0" title="Haga clic para previsualizar stops.txt">
+                  <div class="gtfs-export-title">
+                    <span class="gtfs-export-icon">🚏</span>
+                    <span class="gtfs-export-name">stops.txt</span>
+                  </div>
+                  <div class="gtfs-export-desc">Paraderos y puntos de detención</div>
+                  <div class="gtfs-export-preview-tag">👁️ Previsualizar</div>
+                </div>
+                <div class="gtfs-export-card-action">
+                  <a href="/api/gtfs/export/stops.txt" download="stops.txt" class="btn btn-secondary btn-export-dl" title="Descargar stops.txt">
+                    <span>⬇️ Descargar</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Item routes.txt -->
+              <div class="gtfs-export-card" data-export-file="routes.txt">
+                <div class="gtfs-export-card-info" role="button" tabindex="0" title="Haga clic para previsualizar routes.txt">
+                  <div class="gtfs-export-title">
+                    <span class="gtfs-export-icon">🚍</span>
+                    <span class="gtfs-export-name">routes.txt</span>
+                  </div>
+                  <div class="gtfs-export-desc">Líneas y códigos de ruta ATU</div>
+                  <div class="gtfs-export-preview-tag">👁️ Previsualizar</div>
+                </div>
+                <div class="gtfs-export-card-action">
+                  <a href="/api/gtfs/export/routes.txt" download="routes.txt" class="btn btn-secondary btn-export-dl" title="Descargar routes.txt">
+                    <span>⬇️ Descargar</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Item trips.txt -->
+              <div class="gtfs-export-card" data-export-file="trips.txt">
+                <div class="gtfs-export-card-info" role="button" tabindex="0" title="Haga clic para previsualizar trips.txt">
+                  <div class="gtfs-export-title">
+                    <span class="gtfs-export-icon">🔄</span>
+                    <span class="gtfs-export-name">trips.txt</span>
+                  </div>
+                  <div class="gtfs-export-desc">Patrones de viaje (Ida / Vuelta)</div>
+                  <div class="gtfs-export-preview-tag">👁️ Previsualizar</div>
+                </div>
+                <div class="gtfs-export-card-action">
+                  <a href="/api/gtfs/export/trips.txt" download="trips.txt" class="btn btn-secondary btn-export-dl" title="Descargar trips.txt">
+                    <span>⬇️ Descargar</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Item frequencies.txt -->
+              <div class="gtfs-export-card" data-export-file="frequencies.txt">
+                <div class="gtfs-export-card-info" role="button" tabindex="0" title="Haga clic para previsualizar frequencies.txt">
+                  <div class="gtfs-export-title">
+                    <span class="gtfs-export-icon">⏱️</span>
+                    <span class="gtfs-export-name">frequencies.txt</span>
+                  </div>
+                  <div class="gtfs-export-desc">Intervalos de despacho del servicio</div>
+                  <div class="gtfs-export-preview-tag">👁️ Previsualizar</div>
+                </div>
+                <div class="gtfs-export-card-action">
+                  <a href="/api/gtfs/export/frequencies.txt" download="frequencies.txt" class="btn btn-secondary btn-export-dl" title="Descargar frequencies.txt">
+                    <span>⬇️ Descargar</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Item agency.txt -->
+              <div class="gtfs-export-card" data-export-file="agency.txt">
+                <div class="gtfs-export-card-info" role="button" tabindex="0" title="Haga clic para previsualizar agency.txt">
+                  <div class="gtfs-export-title">
+                    <span class="gtfs-export-icon">🏢</span>
+                    <span class="gtfs-export-name">agency.txt</span>
+                  </div>
+                  <div class="gtfs-export-desc">Empresa y operador del servicio</div>
+                  <div class="gtfs-export-preview-tag">👁️ Previsualizar</div>
+                </div>
+                <div class="gtfs-export-card-action">
+                  <a href="/api/gtfs/export/agency.txt" download="agency.txt" class="btn btn-secondary btn-export-dl" title="Descargar agency.txt">
+                    <span>⬇️ Descargar</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel de Previsualización y Acciones -->
+            <div class="gtfs-preview-wrapper" style="margin-top: 1.5rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.85rem;">
+              <div class="gtfs-preview-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                  <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-main);">Previsualización:</span>
+                  <span id="gtfs-preview-filename" style="font-size: 0.82rem; color: #38bdf8; font-weight: 700; font-family: monospace;">(Ningún archivo seleccionado)</span>
+                  <span id="gtfs-preview-stats" style="font-size: 0.72rem; color: var(--text-dim);"></span>
+                </div>
+                <div style="display: flex; gap: 0.4rem; align-items: center;">
+                  <button type="button" class="btn btn-secondary" id="btn-copy-preview" style="padding: 4px 10px; font-size: 0.75rem;" disabled>
+                    📋 Copiar CSV
+                  </button>
+                  <a id="btn-download-preview" href="#" download="" class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem; text-decoration: none; display: none;">
+                    ⬇️ Descargar Archivo
+                  </a>
+                </div>
+              </div>
+
+              <div class="trama-code-wrapper" style="max-height: 250px; overflow-y: auto;">
+                <pre class="trama-code" id="gtfs-preview-csv">Haga clic en el recuadro de cualquiera de los archivos para previsualizar su contenido aquí sin descargarlo...</pre>
               </div>
             </div>
           </div>
@@ -1087,7 +1211,7 @@
               <select id="unit-form-ruta-select" style="margin-bottom: 0.25rem;">
                 <option value="">-- Seleccionar de Rutas GTFS --</option>
               </select>
-              <input type="text" id="unit-form-ruta" required placeholder="O escribir código (ej. IO33B)" style="text-transform: uppercase;">
+              <input type="text" id="unit-form-ruta" required placeholder="O escribir código (ej. OM09)" style="text-transform: uppercase;">
             </div>
           </div>
 
@@ -1163,6 +1287,43 @@
           <span id="copy-btn-text">Copiar JSON</span>
         </button>
         <button class="btn btn-primary" id="btn-modal-ok">Entendido</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Gestión de Cola Offline ATU -->
+  <div class="modal-overlay" id="modal-queue">
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>📦 Cola de Transmisión Offline ATU</span>
+        </div>
+        <button class="modal-close-btn" id="modal-queue-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-info-bar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+          </svg>
+          <span>
+            Tramas retenidas en disco (<strong id="modal-queue-count" style="color: #f59e0b;">0</strong>) en espera de enlace activo con la ATU.
+          </span>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.5rem 0;">
+          Cuando el enlace se restablezca, estas tramas se despachan en orden FIFO respetando la frecuencia oficial. Si estás desarrollando o probando sin conexión a la ATU, puedes vaciar la cola o forzar reintento aquí.
+        </p>
+        <div class="trama-code-wrapper" style="max-height: 250px; overflow-y: auto;">
+          <pre class="trama-code" id="modal-queue-json">// Cargando cola...</pre>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-secondary" id="btn-modal-clear-queue" style="color: #f87171; border-color: rgba(248, 113, 113, 0.4);">
+          🗑️ Vaciar Cola Completa
+        </button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" id="btn-modal-flush-queue">🚀 Forzar Reintento</button>
+          <button class="btn btn-primary" id="btn-modal-queue-close">Cerrar</button>
+        </div>
       </div>
     </div>
   </div>

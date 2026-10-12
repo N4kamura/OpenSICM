@@ -6,12 +6,19 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "start:gtfs": "node src/server.js --no-atu",
+    "start:pm2": "pm2 start ecosystem.config.js --env production",
+    "restart:pm2": "pm2 restart opensicm-gateway",
+    "stop:pm2": "pm2 stop opensicm-gateway",
+    "logs:pm2": "pm2 logs opensicm-gateway",
+    "test": "node test/run-tests.js",
+    "test:tcp": "node test/send-tcp-sample.js",
     "dev": "node --watch src/server.js",
+    "dev:mock": "node --watch src/server.js --mock",
     "dev:gtfs": "node --watch src/server.js --no-atu",
+    "start:mock": "node src/server.js --mock",
+    "start:gtfs": "node src/server.js --no-atu",
     "simulator": "node simulator.js",
-    "mock-atu": "node test/mock-atu-server.js",
-    "test": "node test/run-tests.js"
+    "mock-atu": "node test/mock-atu-server.js"
   },
   "keywords": [
     "gps",

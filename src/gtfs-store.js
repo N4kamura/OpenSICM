@@ -195,7 +195,7 @@ class GtfsStore {
 
   saveStop(data) {
     const rawId = (data.stop_id !== undefined && data.stop_id !== null) ? String(data.stop_id).trim() : '';
-    const oldStopId = data.old_stop_id ? String(data.old_stop_id).trim() : null;
+    const oldStopId = (data.old_stop_id !== undefined && data.old_stop_id !== null && String(data.old_stop_id).trim() !== '') ? String(data.old_stop_id).trim() : null;
     const name = (data.stop_name || '').trim();
     const lat = parseFloat(data.stop_lat);
     const lon = parseFloat(data.stop_lon);
@@ -359,6 +359,7 @@ class GtfsStore {
 
   saveTrip(data) {
     const tripId = (data.trip_id || '').trim().toUpperCase();
+    const oldTripId = (data.old_trip_id || '').trim().toUpperCase();
     const routeId = (data.route_id || '').trim().toUpperCase();
     const shapeId = (data.shape_id || '').trim().toUpperCase();
     const dirId = parseInt(data.direction_id || '0', 10);
@@ -367,6 +368,15 @@ class GtfsStore {
     if (!tripId || !routeId) return { success: false, error: 'Trip ID y Route ID son requeridos' };
 
     try {
+      if (oldTripId && oldTripId !== tripId) {
+        const existing = db.prepare('SELECT 1 FROM gtfs_trips WHERE trip_id = ?').get(tripId);
+        if (existing) {
+          return { success: false, error: `El identificador de viaje "${tripId}" ya existe en otra plantilla.` };
+        }
+        db.prepare('DELETE FROM gtfs_trips WHERE trip_id = ?').run(oldTripId);
+        db.prepare('UPDATE gtfs_frequencies SET trip_id = ? WHERE trip_id = ?').run(tripId, oldTripId);
+      }
+
       db.prepare(`
         INSERT INTO gtfs_trips (trip_id, route_id, shape_id, direction_id, trip_headsign)
         VALUES (?, ?, ?, ?, ?)

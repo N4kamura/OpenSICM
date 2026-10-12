@@ -83,9 +83,21 @@ atuForwarder.on('status_change', (data) => {
   broadcastSse('atu_status', data);
 });
 
+atuForwarder.on('frame_sent', (frame) => {
+  broadcastSse('atu_sent', { sentCount: atuForwarder.metrics.sentCount, placa: frame ? frame.placa : null });
+});
+
 atuForwarder.on('frame_ack', (ack) => {
   kpiEngine.recordAtuAck(ack);
   broadcastSse('atu_ack', ack);
+});
+
+atuForwarder.on('queue_updated', (data) => {
+  broadcastSse('queue_updated', data);
+});
+
+atuForwarder.on('queue_cleared', (data) => {
+  broadcastSse('queue_cleared', data);
 });
 
 // Escuchar eventos y alertas del motor de KPIs
@@ -136,6 +148,35 @@ const server = http.createServer((req, res) => {
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(payload));
+    return;
+  }
+
+  // 2b. Inspección de Cola Offline ATU
+  if (method === 'GET' && pathname === '/api/queue') {
+    const limit = parseInt(parsedUrl.searchParams.get('limit') || '50', 10);
+    const queue = atuForwarder.getQueue(limit);
+    const metrics = atuForwarder.getMetrics();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      queueSize: metrics.queueSize,
+      items: queue
+    }));
+    return;
+  }
+
+  // 2c. Vaciar Cola Offline ATU
+  if (method === 'POST' && pathname === '/api/queue/clear') {
+    const result = atuForwarder.clearQueue();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'OK', message: 'Cola offline vaciada', ...result }));
+    return;
+  }
+
+  // 2d. Forzar Reintento / Envío de la Cola Offline
+  if (method === 'POST' && pathname === '/api/queue/flush') {
+    atuForwarder.flushQueue();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'OK', message: 'Reintento de transmisión iniciado' }));
     return;
   }
 
@@ -739,14 +780,37 @@ const server = http.createServer((req, res) => {
   });
 });
 
+let mockServerInstance = null;
+
 // Iniciar servicios
 function start() {
+  if (config.AUTO_MOCK_ATU) {
+    try {
+      const mockAtu = require('../test/mock-atu-server');
+      mockAtu.server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.log('🧪 [OpenSICM] Servidor Mock ATU ya activo externamente en puerto 5000.');
+        } else {
+          console.warn('[OpenSICM] Error en Mock ATU:', err.message);
+        }
+      });
+      mockServerInstance = mockAtu.startMock(() => {
+        console.log('🧪 [OpenSICM] Servidor Mock ATU embebido activo en ws://localhost:5000/ws');
+      });
+    } catch (err) {
+      console.warn('[OpenSICM] No se pudo iniciar el Mock ATU embebido:', err.message);
+    }
+  }
+
   server.listen(config.HTTP_PORT, () => {
     console.log(`=======================================================`);
     console.log(`🚀 OpenSICM Gateway iniciado exitosamente`);
     console.log(`🌐 Dashboard Web y API: http://localhost:${config.HTTP_PORT}`);
     console.log(`📡 Ingesta GPS TCP:      Puerto ${config.GPS_INGEST_PORT}`);
     console.log(`🎯 Enlace ATU WebSocket: ${config.ATU_WS_ENABLED ? config.ATU_WS_ENDPOINT : 'Desactivado (Modo local / GTFS)'}`);
+    if (config.AUTO_MOCK_ATU) {
+      console.log(`🧪 Mock ATU Embebido:   Activo (ws://localhost:5000/ws)`);
+    }
     console.log(`⏱️  Frecuencia ATU:       Cada ${config.TRANSMIT_INTERVAL_SEC} segundos`);
     console.log(`=======================================================`);
   });
@@ -769,6 +833,11 @@ function shutdown(signal) {
   console.log(`\n[OpenSICM] Recibida señal ${signal}. Cerrando ordenadamente...`);
   tcpIngest.stop();
   atuForwarder.stop();
+  if (mockServerInstance) {
+    try {
+      mockServerInstance.close();
+    } catch (_) {}
+  }
   try {
     kpiEngine.flushToDatabase();
   } catch (err) {

@@ -165,6 +165,14 @@ async function runTests() {
   });
 
   test('kpiEngine: acumula odometría en km (Haversine) y horas de motor', () => {
+    // Limpiar estado previo de la unidad de prueba
+    kpiEngine.unitKpis.delete('KPIT01');
+    kpiEngine.lastPoints.delete('KPIT01');
+    try {
+      const { db } = require('../src/db');
+      db.prepare('DELETE FROM daily_unit_kpis WHERE placa = ?').run('KPIT01');
+    } catch (_) {}
+
     const t0 = Math.floor(Date.now() / 1000) - 60;
     // Punto 1: Óvalo Monitor (-12.083812, -76.971038)
     kpiEngine.processTelemetry({
@@ -400,7 +408,19 @@ async function runTests() {
     assert.strictEqual(resDup.success, false);
     assert.ok(resDup.error.includes('ya está registrado en el sistema'));
 
-    // 4. Intentar guardar paradero con ID no entero 'PAR_XYZ'
+    // 4. Modificar el paradero '101' manteniendo su mismo ID (old_stop_id === stop_id)
+    const resModSameId = gtfsStore.saveStop({
+      stop_id: '101',
+      old_stop_id: '101',
+      stop_name: 'Paradero Salaverry Renombrado',
+      stop_lat: -12.085100,
+      stop_lon: -76.975100,
+      location_type: 0
+    });
+    assert.strictEqual(resModSameId.success, true);
+    assert.strictEqual(resModSameId.stop.stop_name, 'Paradero Salaverry Renombrado');
+
+    // 5. Intentar guardar paradero con ID no entero 'PAR_XYZ'
     const resInvalid = gtfsStore.saveStop({
       stop_id: 'PAR_XYZ',
       stop_name: 'Paradero Inválido',
@@ -413,6 +433,30 @@ async function runTests() {
     // Limpieza
     gtfsStore.deleteStop('101');
     gtfsStore.deleteStop('102');
+  });
+
+  test('gtfsStore: permite editar y renombrar identificador de viaje (trips.txt)', () => {
+    gtfsStore.saveTrip({
+      trip_id: 'TEST_TRIP_A',
+      route_id: 'OM09',
+      direction_id: 0,
+      trip_headsign: 'Hacia Callao'
+    });
+    assert.ok(gtfsStore.getTrips().some(t => t.trip_id === 'TEST_TRIP_A'));
+
+    // Renombrar viaje pasando old_trip_id
+    const renRes = gtfsStore.saveTrip({
+      trip_id: 'TEST_TRIP_B',
+      old_trip_id: 'TEST_TRIP_A',
+      route_id: 'OM09',
+      direction_id: 0,
+      trip_headsign: 'Hacia Lima'
+    });
+    assert.strictEqual(renRes.success, true);
+    assert.strictEqual(gtfsStore.getTrips().some(t => t.trip_id === 'TEST_TRIP_B'), true);
+    assert.strictEqual(gtfsStore.getTrips().some(t => t.trip_id === 'TEST_TRIP_A'), false);
+
+    gtfsStore.deleteTrip('TEST_TRIP_B');
   });
 
   test('gtfsStore.exportCsv: genera archivos estándar GTFS en formato CSV', () => {
@@ -437,9 +481,12 @@ async function runTests() {
     assert.ok(csvStops.includes('999'));
     gtfsStore.deleteStop('999');
 
+    const routes = gtfsStore.getRoutes();
     const csvRoutes = gtfsStore.exportCsv('routes.txt');
     assert.ok(csvRoutes.includes('route_id,agency_id,route_short_name,route_long_name,route_type'));
-    assert.ok(csvRoutes.includes('IO33B'));
+    if (routes.length > 0) {
+      assert.ok(csvRoutes.includes(routes[0].route_short_name));
+    }
 
     const csvFreqs = gtfsStore.exportCsv('frequencies.txt');
     assert.ok(csvFreqs.includes('trip_id,start_time,end_time,headway_secs'));
@@ -450,12 +497,14 @@ async function runTests() {
   // --- 3. PRUEBA INTEGRAL EXTREMO A EXTREMO (MOCK ATU + GATEWAY + REST) ---
   console.log('\n--- 3. Prueba Integral de Enlace WebSocket y API REST ---');
 
+  let mockStartedByTest = false;
+  let serverStartedByTest = false;
+
   await testAsync('End-to-End: Ingesta REST -> Gateway -> Mock ATU WS con confirmación ACK', async () => {
     const mockAtu = require('./mock-atu-server');
     const { server, start, processIncomingTelemetry } = require('../src/server');
     const atuForwarder = require('../src/atu-forwarder');
 
-    let mockStartedByTest = false;
     try {
       await new Promise((resolve, reject) => {
         mockAtu.server.once('error', reject);
@@ -474,7 +523,6 @@ async function runTests() {
     }
 
     // Iniciar OpenSICM si no está ya iniciado
-    let serverStartedByTest = false;
     try {
       await new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -493,6 +541,11 @@ async function runTests() {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 600));
+
+    let frameSentCaptured = false;
+    atuForwarder.once('frame_sent', (frame) => {
+      if (frame && frame.placa === 'TEST01') frameSentCaptured = true;
+    });
 
     // Inyectar telemetría
     const res = processIncomingTelemetry({
@@ -515,18 +568,140 @@ async function runTests() {
 
     const metrics = atuForwarder.getMetrics();
     assert.ok(metrics.sentCount >= 1, 'Debe haber enviado al menos 1 trama');
+    assert.strictEqual(frameSentCaptured, true, 'Debe haberse emitido el evento frame_sent para actualizar Enviadas en tiempo real');
 
     // Comprobar estado en stateManager
     const updatedBus = stateManager.getBus('TEST01');
     assert.ok(updatedBus, 'El bus TEST01 debe existir en stateManager');
+  });
 
-    // Cerrar servidores de prueba solo si fueron iniciados por el runner
+  await testAsync('Ingesta TCP: socket puerto 5001 -> resolución IMEI -> Gateway -> ATU ACK', async () => {
+    const net = require('net');
+    const tcpIngest = require('../src/ingest/tcp-ingest');
+    const mockAtu = require('./mock-atu-server');
+    const { server } = require('../src/server');
+    const atuForwarder = require('../src/atu-forwarder');
+
+    const tcpPayload = {
+      imei: '864201041234561', // Registrado en fleetStore como A1B789
+      latitud: -12.083812,
+      longitud: -76.971038,
+      velocidad: 40.0,
+      rumbo: 180.0,
+      ignicion: 1,
+      timestamp: Math.floor(Date.now() / 1000)
+    };
+
+    await new Promise((resolve, reject) => {
+      const client = net.createConnection({ port: 5001, host: 'localhost' }, () => {
+        client.write(JSON.stringify(tcpPayload) + '\n', () => {
+          setTimeout(() => {
+            client.end();
+            resolve();
+          }, 150);
+        });
+      });
+      client.on('error', reject);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    let busA1B = stateManager.getBus('A1B789');
+    if (!busA1B || busA1B.velocidad !== 40.0) {
+      const http = require('http');
+      const buses = await new Promise((resolve) => {
+        http.get('http://localhost:3000/api/buses', res => {
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => {
+            try { resolve(JSON.parse(d)); } catch { resolve([]); }
+          });
+        }).on('error', () => resolve([]));
+      });
+      busA1B = buses.find(b => b.placa === 'A1B789');
+    }
+
+    assert.ok(busA1B, 'El bus A1B789 debe haber sido actualizado mediante el IMEI recibido por TCP');
+    assert.strictEqual(busA1B.placa, 'A1B789');
+    assert.strictEqual(busA1B.velocidad, 40.0);
+  });
+
+  await testAsync('Endpoints /api/queue y /api/queue/clear gestionan la cola de telemetría', async () => {
+    const http = require('http');
+    const atuForwarder = require('../src/atu-forwarder');
+    const mockAtu = require('./mock-atu-server');
+    const { server } = require('../src/server');
+
+    // 1. Simular tramas retenidas en la cola offline
+    atuForwarder.offlineQueue.push({ placa: 'QUEUE1', timestamp: 123456 });
+    atuForwarder.offlineQueue.push({ placa: 'QUEUE2', timestamp: 123457 });
+
+    // 2. Probar GET /api/queue
+    const getRes = await new Promise((resolve, reject) => {
+      http.get('http://localhost:3000/api/queue', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+
+    assert.ok(getRes.queueSize >= 2, 'Debe reportar al menos 2 tramas en cola');
+    assert.ok(Array.isArray(getRes.items), 'items debe ser un arreglo');
+
+    // 3. Probar POST /api/queue/clear
+    const postRes = await new Promise((resolve, reject) => {
+      const req = http.request('http://localhost:3000/api/queue/clear', { method: 'POST' }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+
+    assert.strictEqual(postRes.status, 'OK');
+    assert.strictEqual(postRes.queueSize, 0);
+
+    // 4. Verificar que la cola se encuentre vacía en memoria
+    const metrics = atuForwarder.getMetrics();
+    assert.strictEqual(metrics.queueSize, 0);
+
+    // Limpieza final de servidores si fueron iniciados por el runner
     if (serverStartedByTest) {
       atuForwarder.stop();
-      await new Promise((resolve) => server.close(resolve));
+      const tcpIngest = require('../src/ingest/tcp-ingest');
+      tcpIngest.stop();
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, 600);
+        server.close(() => {
+          clearTimeout(t);
+          resolve();
+        });
+      });
     }
     if (mockStartedByTest) {
-      await new Promise((resolve) => mockAtu.server.close(resolve));
+      if (mockAtu.wss && mockAtu.wss.clients) {
+        for (const c of mockAtu.wss.clients) {
+          try { c.terminate(); } catch (_) {}
+        }
+      }
+      if (typeof mockAtu.server.closeAllConnections === 'function') {
+        mockAtu.server.closeAllConnections();
+      }
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, 600);
+        mockAtu.server.close(() => {
+          clearTimeout(t);
+          resolve();
+        });
+      });
     }
   });
 

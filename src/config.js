@@ -21,6 +21,7 @@ module.exports = {
   ATU_WS_ENABLED: process.env.ATU_WS_ENABLED !== 'false' && !process.argv.includes('--no-atu'),
   ATU_WS_ENDPOINT: process.env.ATU_WS_ENDPOINT || 'ws://localhost:5000/ws',
   ATU_COMPANY_TOKEN: process.env.ATU_COMPANY_TOKEN || 'TOKEN_DEMO',
+  AUTO_MOCK_ATU: process.env.AUTO_MOCK_ATU === 'true' || process.argv.includes('--mock'),
   
   // Intervalos
   TRANSMIT_INTERVAL_SEC: parseInt(process.env.TRANSMIT_INTERVAL_SEC || '30', 10),

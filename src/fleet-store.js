@@ -13,34 +13,34 @@ const LEGACY_FLEET_FILE = path.resolve(__dirname, '../data/fleet.json');
 const DEFAULT_FLEET = [
   {
     placa: 'A1B789',
-    ruta: 'IO33B',
+    ruta: 'OM09',
     padron: '12',
     imei: '864201041234561',
     modeloGps: 'TELTONIKA_FMB920',
     activo: 1,
-    notas: 'Unidad operativa - Javier Prado'
+    notas: 'Unidad operativa - Sáenz Peña / Plaza Unión'
   },
   {
     placa: 'BC1023',
-    ruta: 'CR42',
+    ruta: 'OM09',
     padron: '45',
     imei: '864201041234562',
     modeloGps: 'SUNTECH_ST310',
     activo: 1,
-    notas: 'Unidad operativa - Vía Expresa'
+    notas: 'Unidad operativa - Ruta OM09'
   },
   {
     placa: 'D4E567',
-    ruta: '101',
+    ruta: 'OM09',
     padron: '08',
     imei: '864201041234563',
     modeloGps: 'QUECLINK_GV300',
     activo: 1,
-    notas: 'Unidad operativa - Av. Brasil'
+    notas: 'Unidad operativa - Ruta OM09'
   },
   {
     placa: 'F7G890',
-    ruta: 'OM18',
+    ruta: 'OM09',
     padron: '27',
     imei: '864201041234564',
     modeloGps: 'TELTONIKA_FMC130',
@@ -49,7 +49,7 @@ const DEFAULT_FLEET = [
   },
   {
     placa: 'H2J345',
-    ruta: 'IO33B',
+    ruta: 'OM09',
     padron: '33',
     imei: '864201041234565',
     modeloGps: 'SUNTECH_ST340',
@@ -58,7 +58,7 @@ const DEFAULT_FLEET = [
   },
   {
     placa: 'X9Y123',
-    ruta: 'CR42',
+    ruta: 'OM09',
     padron: '19',
     imei: '',
     modeloGps: '',
@@ -67,7 +67,7 @@ const DEFAULT_FLEET = [
   },
   {
     placa: 'M4K567',
-    ruta: '101',
+    ruta: 'OM09',
     padron: '52',
     imei: '',
     modeloGps: '',
@@ -241,6 +241,7 @@ class FleetStore {
       }
 
       const updated = this.getByPlaca(placa);
+      this.syncToJsonFile();
       return { success: true, unit: updated };
     } catch (err) {
       console.error('[FleetStore] Error guardando unidad en SQLite:', err.message);
@@ -277,6 +278,7 @@ class FleetStore {
       update.run(cleanImei, (modeloGps || 'TELTONIKA_FMB920').toString().trim().toUpperCase(), now, cleanPlaca);
 
       const updated = this.getByPlaca(cleanPlaca);
+      this.syncToJsonFile();
       return { success: true, unit: updated };
     } catch (err) {
       console.error('[FleetStore] Error asignando GPS:', err.message);
@@ -304,6 +306,7 @@ class FleetStore {
       update.run(cleanRuta, now, cleanPlaca);
 
       const updated = this.getByPlaca(cleanPlaca);
+      this.syncToJsonFile();
       return { success: true, unit: updated };
     } catch (err) {
       console.error('[FleetStore] Error asignando ruta a unidad:', err.message);
@@ -328,6 +331,7 @@ class FleetStore {
       update.run(now, cleanPlaca);
 
       const updated = this.getByPlaca(cleanPlaca);
+      this.syncToJsonFile();
       return { success: true, unit: updated };
     } catch (err) {
       console.error('[FleetStore] Error desasignando GPS:', err.message);
@@ -345,10 +349,29 @@ class FleetStore {
       if (res.changes === 0) {
         return { success: false, error: 'Unidad no encontrada' };
       }
+      this.syncToJsonFile();
       return { success: true };
     } catch (err) {
       console.error('[FleetStore] Error eliminando unidad:', err.message);
       return { success: false, error: err.message };
+    }
+  }
+
+  syncToJsonFile() {
+    try {
+      const all = this.getAll();
+      const exportList = all.map(u => ({
+        placa: u.placa,
+        ruta: u.ruta,
+        padron: u.padron,
+        imei: u.imei,
+        modeloGps: u.modeloGps,
+        activo: u.activo,
+        notas: u.notas || ''
+      }));
+      fs.writeFileSync(LEGACY_FLEET_FILE, JSON.stringify(exportList, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('[FleetStore] Error sincronizando fleet.json:', e.message);
     }
   }
 
