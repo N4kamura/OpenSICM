@@ -356,8 +356,9 @@ OpenSICM/
 
 ## 📜 Licencia
 
-Este proyecto está protegido bajo la **Licencia PolyForm Noncommercial 1.0.0** (Uso No Comercial con Atribución Obligatoria).
+Este proyecto es software de código abierto protegido bajo la licencia **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-* **Permitido:** Uso, estudio, bifurcación (fork) y modificación con fines no comerciales ni lucrativos, siempre que se conserve la atribución y créditos expresos a **N4kamura**.
-* **Prohibido:** Queda estrictamente prohibida la comercialización, venta, revenda, prestación de servicios comerciales de pago (SaaS / pasarela de telemetría pagada) o lucro económico directo o indirecto por parte de terceros sin autorización previa por escrito del autor.
-* Consulta los términos completos en el archivo [**`LICENSE`**](file:///d:/Projects/OpenSICM/LICENSE).
+* **Créditos y Atribución:** Cualquier copia, bifurcación o trabajo derivado debe conservar intactos los derechos de autor y créditos al autor original (**N4kamura**).
+* **Copyleft y Liberación Obligatoria:** Si modificas el software o creas obras derivadas y las distribuyes o ejecutas en un servidor accesible a través de la red (SaaS / pasarela en la nube), **estás obligado por ley a liberar todo el código fuente modificado** bajo esta misma licencia libre (AGPLv3). Queda prohibido cerrar el código o convertirlo en software privativo.
+* **Cobro por Despliegue y Servicios:** Conforme a los principios de la *Free Software Foundation*, se permite libremente cobrar por servicios comerciales de valor agregado: instalación, configuración de GPS en campo, soporte técnico, capacitación y despliegue administrado en servidores VPS.
+* Consulta el texto legal completo en [**`LICENSE`**](LICENSE).
